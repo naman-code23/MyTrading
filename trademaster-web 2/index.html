@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>TradeMaster Pro Cloud</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Trade journaling • Google auth • Free hosting</div>
+        <h1>TradeMaster Pro Cloud</h1>
+        <p class="subhead">Multi-leg trading journal with pyramiding, partial exits, dashboards, MBI tools, and free Firebase hosting.</p>
+      </div>
+      <div class="topbar-actions">
+        <div id="modeBadge" class="pill pill-muted">Checking mode…</div>
+        <button id="signInBtn" class="btn btn-primary">Sign in with Google</button>
+        <button id="signOutBtn" class="btn btn-ghost hidden">Sign out</button>
+      </div>
+    </header>
+
+    <section class="hero-grid">
+      <div class="panel user-panel">
+        <div class="panel-title">Workspace</div>
+        <div id="userSummary" class="user-summary">
+          <div class="avatar">TM</div>
+          <div>
+            <div class="user-name">Loading…</div>
+            <div class="user-meta">Preparing your journal</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel status-panel">
+        <div class="panel-title">What this version adds</div>
+        <ul class="feature-pills">
+          <li>Google authentication</li>
+          <li>Firestore sync</li>
+          <li>Multi-leg fills</li>
+          <li>Search / sort / filter</li>
+          <li>Equity + monthly graphs</li>
+          <li>Drive backup</li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="nav-tabs" id="mainTabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="journal">Journal</button>
+      <button class="tab" data-tab="calculator">Calculator</button>
+      <button class="tab" data-tab="mbi">MBI</button>
+      <button class="tab" data-tab="sell">Sell Check</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <main>
+      <section id="tab-dashboard" class="tab-panel active">
+        <div class="panel">
+          <div class="section-row">
+            <div>
+              <div class="section-title">Performance Dashboard</div>
+              <p class="section-copy">Your closed-trade stats, equity curve, and breakdowns by month, setup, and weekday.</p>
+            </div>
+            <button id="addTradeFromDashboard" class="btn btn-primary">+ Add trade</button>
+          </div>
+          <div id="summaryCards" class="stats-grid"></div>
+        </div>
+
+        <div class="analytics-grid">
+          <div class="panel chart-panel">
+            <div class="panel-title">Equity curve</div>
+            <div class="chart-box"><canvas id="equityChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Monthly P&amp;L</div>
+            <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Strategy P&amp;L</div>
+            <div class="chart-box"><canvas id="strategyChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Weekday win rate</div>
+            <div class="chart-box"><canvas id="weekdayChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="section-title">Recent trades</div>
+          <div id="recentTrades" class="trade-list"></div>
+        </div>
+      </section>
+
+      <section id="tab-journal" class="tab-panel">
+        <div class="panel">
+          <div class="section-row journal-head">
+            <div>
+              <div class="section-title">Trade Journal</div>
+              <p class="section-copy">Log buys and sells as separate legs. Pyramiding and partial exits are calculated automatically.</p>
+            </div>
+            <div class="toolbar-actions">
+              <button id="exportCsvBtn" class="btn btn-ghost">Export CSV</button>
+              <button id="exportJsonBtn" class="btn btn-ghost">Export JSON</button>
+              <button id="openTradeModalBtn" class="btn btn-primary">+ New trade</button>
+            </div>
+          </div>
+
+          <div class="toolbar-grid">
+            <label class="field">
+              <span>Search</span>
+              <input id="searchInput" type="search" placeholder="Symbol, strategy, tag, notes" />
+            </label>
+            <label class="field">
+              <span>Status</span>
+              <select id="statusFilter">
+                <option value="ALL">All</option>
+                <option value="OPEN">Open</option>
+                <option value="CLOSED">Closed</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Direction</span>
+              <select id="directionFilter">
+                <option value="ALL">All</option>
+                <option value="LONG">Long</option>
+                <option value="SHORT">Short</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Result</span>
+              <select id="resultFilter">
+                <option value="ALL">All</option>
+                <option value="WIN">Winners</option>
+                <option value="LOSS">Losers</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Strategy</span>
+              <select id="strategyFilter">
+                <option value="ALL">All</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Sort</span>
+              <select id="sortSelect">
+                <option value="DATE_DESC">Newest first</option>
+                <option value="DATE_ASC">Oldest first</option>
+                <option value="PNL_DESC">P&amp;L high → low</option>
+                <option value="PNL_ASC">P&amp;L low → high</option>
+                <option value="R_DESC">Highest R</option>
+                <option value="HOLD_DESC">Longest hold</option>
+                <option value="SYMBOL_ASC">Symbol A → Z</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>From</span>
+              <input id="fromDateFilter" type="date" />
+            </label>
+            <label class="field">
+              <span>To</span>
+              <input id="toDateFilter" type="date" />
+            </label>
+          </div>
+        </div>
+
+        <div id="journalTable" class="trade-table-wrap"></div>
+      </section>
+
+      <section id="tab-calculator" class="tab-panel">
+        <div class="panel">
+          <div class="section-title">Position Size Calculator</div>
+          <p class="section-copy">Set entry and stop loss, then let the calculator solve position size, quantity, target P&amp;L, and charge estimate.</p>
+          <div class="form-grid form-grid-3">
+            <label class="field"><span>Capital</span><input id="calcCapital" type="number" value="2800000" step="1000" /></label>
+            <label class="field"><span>Risk %</span><input id="calcRiskPercent" type="number" value="0.4" step="0.1" /></label>
+            <label class="field"><span>Last edited mode</span>
+              <select id="calcLastEdited">
+                <option value="entry">Auto / Entry</option>
+                <option value="positionSize">Position size</option>
+                <option value="riskAmount">Risk amount</option>
+              </select>
+            </label>
+            <label class="field"><span>Entry</span><input id="calcEntry" type="number" step="0.01" /></label>
+            <label class="field"><span>SL price</span><input id="calcSlPrice" type="number" step="0.01" /></label>
+            <label class="field"><span>SL %</span><input id="calcSlPercent" type="number" step="0.01" /></label>
+            <label class="field"><span>Position size</span><input id="calcPositionSize" type="number" step="1" /></label>
+            <label class="field"><span>Risk amount</span><input id="calcRiskAmount" type="number" step="1" /></label>
+            <label class="field"><span>Trail SL</span><input id="calcTrailPrice" type="number" step="0.01" /></label>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="panel metric-card"><div class="metric-label">Quantity</div><div id="calcQty" class="metric-value">0</div></div>
+          <div class="panel metric-card"><div class="metric-label">Position value</div><div id="calcValue" class="metric-value">₹0</div></div>
+          <div class="panel metric-card"><div class="metric-label">Actual risk</div><div id="calcActualRisk" class="metric-value">₹0</div></div>
+          <div class="panel metric-card"><div class="metric-label">Size %</div><div id="calcPositionPercent" class="metric-value">0%</div></div>
+          <div class="panel metric-card"><div class="metric-label">Risk of capital</div><div id="calcRiskCapitalPercent" class="metric-value">0%</div></div>
+          <div class="panel metric-card"><div class="metric-label">Locked by trail</div><div id="calcTrailLocked" class="metric-value">₹0</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="section-title">Target simulator</div>
+          <div class="form-grid form-grid-3">
+            <label class="field"><span>Target R</span><input id="targetR" type="number" step="0.1" /></label>
+            <label class="field"><span>Target %</span><input id="targetPercent" type="number" step="0.1" /></label>
+            <label class="field"><span>Exit price</span><input id="targetExitPrice" type="number" step="0.01" /></label>
+          </div>
+          <div class="stats-grid compact-top">
+            <div class="panel metric-card"><div class="metric-label">Projected P&amp;L</div><div id="targetPnl" class="metric-value">₹0</div></div>
+            <div class="panel metric-card"><div class="metric-label">Net after charges</div><div id="targetNetPnl" class="metric-value">₹0</div></div>
+            <div class="panel metric-card"><div class="metric-label">Brokerage</div><div id="chargesBrokerage" class="metric-value">₹0</div></div>
+            <div class="panel metric-card"><div class="metric-label">STT</div><div id="chargesStt" class="metric-value">₹0</div></div>
+            <div class="panel metric-card"><div class="metric-label">Other</div><div id="chargesOther" class="metric-value">₹0</div></div>
+            <div class="panel metric-card"><div class="metric-label">Total charges</div><div id="chargesTotal" class="metric-value">₹0</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-mbi" class="tab-panel">
+        <div class="panel">
+          <div class="section-title">MBI Scorer</div>
+          <p class="section-copy">Use your breadth sheet numbers and get score, market zone, sizing guidance, and sell warnings.</p>
+          <div class="form-grid form-grid-4">
+            <label class="field"><span>Above 20 MA %</span><input id="mbiA20" type="number" step="0.1" /></label>
+            <label class="field"><span>Above 50 MA %</span><input id="mbiA50" type="number" step="0.1" /></label>
+            <label class="field"><span>Above 200 MA %</span><input id="mbiA200" type="number" step="0.1" /></label>
+            <label class="field"><span>Net breadth</span><input id="mbiNb" type="number" step="0.1" /></label>
+            <label class="field"><span>52W High %</span><input id="mbiWh" type="number" step="0.1" /></label>
+            <label class="field"><span>52W Low %</span><input id="mbiWl" type="number" step="0.1" /></label>
+            <label class="field"><span>BO S/F</span><input id="mbiBosf" type="number" step="0.01" /></label>
+            <label class="field"><span>UH/LH ratio</span><input id="mbiUhlh" type="number" step="0.1" /></label>
+            <label class="field"><span>Volume ratio</span><input id="mbiVol" type="number" step="0.01" /></label>
+            <label class="field"><span>4% advance %</span><input id="mbiAdv" type="number" step="0.1" /></label>
+            <label class="field"><span>Net 15% H-L</span><input id="mbiNhl" type="number" step="0.1" /></label>
+            <label class="field"><span>Breakdowns %</span><input id="mbiBd" type="number" step="0.1" /></label>
+          </div>
+        </div>
+
+        <div class="analytics-grid">
+          <div class="panel">
+            <div class="score-wrap">
+              <div class="metric-label">MBI score</div>
+              <div id="mbiScore" class="score-number">—</div>
+              <div id="mbiZone" class="score-zone">Fill all inputs</div>
+              <p id="mbiActionText" class="section-copy score-copy">Your swing and intraday guidance will appear here.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Signals &amp; sizing</div>
+            <div id="mbiSignals" class="signal-list"></div>
+            <div id="mbiSizing" class="sizing-box"></div>
+          </div>
+          <div class="panel full-span">
+            <div class="panel-title">Score breakdown</div>
+            <div id="mbiBreakdown" class="breakdown-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-sell" class="tab-panel">
+        <div class="analytics-grid">
+          <div class="panel">
+            <div class="section-title">Quick sell calculator</div>
+            <div class="form-grid form-grid-2 compact-top">
+              <label class="field"><span>Buy price</span><input id="sellBuyPrice" type="number" step="0.01" /></label>
+              <label class="field"><span>Current price</span><input id="sellCurrentPrice" type="number" step="0.01" /></label>
+              <label class="field"><span>Quantity</span><input id="sellQty" type="number" step="1" /></label>
+              <label class="field"><span>Days held</span><input id="sellDaysHeld" type="number" step="1" /></label>
+            </div>
+            <div class="stats-grid compact-top">
+              <div class="panel metric-card"><div class="metric-label">P&amp;L</div><div id="sellPnl" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">P&amp;L %</div><div id="sellPnlPercent" class="metric-value">0%</div></div>
+            </div>
+            <div id="sellAdvice" class="panel-note compact-top">Enter values to see advice.</div>
+          </div>
+          <div class="panel">
+            <div class="section-title">Sell checklist</div>
+            <div class="form-grid form-grid-2 compact-top">
+              <label class="field"><span>Current MBI score</span><input id="sellMbiScore" type="number" step="1" /></label>
+              <label class="field"><span>Previous day score</span><input id="sellPrevScore" type="number" step="1" /></label>
+              <label class="field"><span>52W lows %</span><input id="sell52wLows" type="number" step="0.1" /></label>
+              <label class="field"><span>Above 20MA %</span><input id="sellAbove20" type="number" step="0.1" /></label>
+            </div>
+            <div id="sellChecklist" class="checklist compact-top"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="tab-panel">
+        <div class="analytics-grid">
+          <div class="panel">
+            <div class="section-title">Journal settings</div>
+            <div class="form-grid form-grid-2 compact-top">
+              <label class="field">
+                <span>P&amp;L method</span>
+                <select id="settingsPnlMethod">
+                  <option value="AVERAGE">Weighted average</option>
+                  <option value="FIFO">FIFO</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Base currency</span>
+                <select id="settingsCurrency">
+                  <option value="INR">INR</option>
+                  <option value="USD">USD</option>
+                </select>
+              </label>
+            </div>
+            <div class="toolbar-actions compact-top">
+              <button id="saveSettingsBtn" class="btn btn-primary">Save settings</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="section-title">Backup &amp; restore</div>
+            <p class="section-copy">Firestore is the primary database. Google Drive backup writes a JSON snapshot to your hidden appDataFolder.</p>
+            <div class="toolbar-actions compact-top stretch-mobile">
+              <button id="backupDriveBtn" class="btn btn-ghost">Backup to Google Drive</button>
+              <button id="restoreDriveBtn" class="btn btn-ghost">Restore from Drive</button>
+              <button id="importJsonBtn" class="btn btn-ghost">Import JSON file</button>
+              <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
+            </div>
+          </div>
+          <div class="panel full-span">
+            <div class="section-title">Deployment notes</div>
+            <ol class="deploy-list">
+              <li>Enable Google sign-in in Firebase Authentication.</li>
+              <li>Create Firestore in production or test mode, then paste your config into <code>js/config.js</code>.</li>
+              <li>Enable the Google Drive API only if you want Drive backup.</li>
+              <li>Deploy this folder with Firebase Hosting free tier.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="tradeModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+      <div class="section-row">
+        <div>
+          <div id="tradeModalTitle" class="section-title">New trade</div>
+          <p class="section-copy">Add every executed leg so the app can calculate scale-ins and partial exits correctly.</p>
+        </div>
+        <button id="closeTradeModalBtn" class="btn btn-ghost">Close</button>
+      </div>
+      <form id="tradeForm" class="trade-form">
+        <input id="tradeId" type="hidden" />
+        <div class="form-grid form-grid-3">
+          <label class="field"><span>Symbol</span><input id="tradeSymbol" type="text" placeholder="RELIANCE" required /></label>
+          <label class="field"><span>Direction</span>
+            <select id="tradeDirection">
+              <option value="LONG">Long</option>
+              <option value="SHORT">Short</option>
+            </select>
+          </label>
+          <label class="field"><span>Strategy</span><input id="tradeStrategy" type="text" placeholder="VCP / AVWAP / Swing" /></label>
+          <label class="field"><span>Planned risk</span><input id="tradePlannedRisk" type="number" step="1" placeholder="11200" /></label>
+          <label class="field"><span>Planned stop</span><input id="tradePlannedStop" type="number" step="0.01" placeholder="2480" /></label>
+          <label class="field"><span>MBI snapshot</span><input id="tradeMbiScore" type="number" step="1" placeholder="27" /></label>
+        </div>
+        <label class="field compact-top"><span>Tags (comma separated)</span><input id="tradeTags" type="text" placeholder="earnings, gap-up, rule-followed" /></label>
+        <label class="field compact-top"><span>Notes</span><textarea id="tradeNotes" rows="3" placeholder="Setup, mistake, lesson, emotions, screenshots link, thesis"></textarea></label>
+
+        <div class="section-row compact-top">
+          <div>
+            <div class="panel-title">Executed fills</div>
+            <p class="section-copy">Add a row for each buy or sell. You can pyramid entries and exit in stages.</p>
+          </div>
+          <div class="toolbar-actions stretch-mobile">
+            <button id="addBuyFillBtn" type="button" class="btn btn-ghost">+ Buy leg</button>
+            <button id="addSellFillBtn" type="button" class="btn btn-ghost">+ Sell leg</button>
+          </div>
+        </div>
+
+        <div id="fillsContainer" class="fills-list"></div>
+
+        <div class="panel compact-top accent-panel">
+          <div class="panel-title">Live trade metrics</div>
+          <div id="tradeMetricsPreview" class="stats-grid compact-top"></div>
+        </div>
+
+        <div class="section-row compact-top">
+          <div class="toolbar-actions stretch-mobile">
+            <button id="saveTradeBtn" type="submit" class="btn btn-primary">Save trade</button>
+            <button id="duplicateTradeBtn" type="button" class="btn btn-ghost hidden">Duplicate</button>
+          </div>
+          <button id="deleteTradeBtn" type="button" class="btn btn-danger hidden">Delete trade</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="./js/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

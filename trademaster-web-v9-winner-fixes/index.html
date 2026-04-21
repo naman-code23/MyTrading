@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#09090b" />
+  <title>TradeMaster Pro Cloud</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Calculator preserved • multi-leg journal • Google auth • free hosting</div>
+        <h1>TradeMaster Pro Cloud</h1>
+        <p class="subhead">The upgraded web version of your original Trade Master Pro: full position calculator, SuperMBI regime tools, and a proper multi-leg cloud journal.</p>
+      </div>
+      <div class="topbar-actions">
+        <div id="modeBadge" class="pill pill-muted">Checking mode…</div>
+        <button id="signInBtn" class="btn btn-primary">Sign in with Google</button>
+        <button id="signOutBtn" class="btn btn-ghost hidden">Sign out</button>
+      </div>
+    </header>
+
+    <section class="hero-grid">
+      <div class="panel user-panel">
+        <div class="panel-title">Workspace</div>
+        <div id="userSummary" class="user-summary">
+          <div class="avatar">TM</div>
+          <div>
+            <div class="user-name">Loading…</div>
+            <div class="user-meta">Preparing your workspace</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel status-panel">
+        <div class="panel-title">What this version adds</div>
+        <ul class="feature-pills">
+          <li>Original calculator workflow preserved</li>
+          <li>Google authentication</li>
+          <li>Firestore sync + free hosting</li>
+          <li>Pyramiding + partial exits</li>
+          <li>Search, sort, filters, exports</li>
+          <li>Drive backup + analytics</li>
+          <li>AI coach + improvement plan</li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="nav-tabs" id="mainTabs">
+      <button class="tab active" data-tab="calculator">Calculator</button>
+      <button class="tab" data-tab="mbi">MBI</button>
+      <button class="tab" data-tab="playbook">Playbook</button>
+      <button class="tab" data-tab="sell">Sell Check</button>
+      <button class="tab" data-tab="journal">Journal</button>
+      <button class="tab" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="coach">AI Coach</button>
+      <button class="tab" data-tab="winners">Winner DB</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <main>
+      <section id="tab-calculator" class="tab-panel active">
+        <div class="analytics-grid calculator-grid">
+          <div class="panel calc-setup-panel">
+            <div class="section-row">
+              <div>
+                <div class="section-title">Position Size Calculator</div>
+                <p class="section-copy">This keeps the TradeMasterPro calculator workflow: entry, stop, size, risk, trail lock, target simulator, and charges.</p>
+              </div>
+              <div class="toolbar-actions stretch-mobile">
+                <button id="pushCalcToTradeBtn" class="btn btn-primary">Use in trade journal</button>
+                <button id="resetCalcBtn" class="btn btn-ghost">Reset</button>
+              </div>
+            </div>
+
+            <div class="form-grid form-grid-3 compact-top">
+              <label class="field"><span>Capital</span><input id="calcCapital" type="number" value="2800000" step="1000" /></label>
+              <label class="field"><span>Risk %</span><input id="calcRiskPercent" type="number" value="0.4" step="0.1" /></label>
+              <label class="field"><span>Mode</span>
+                <select id="calcLastEdited">
+                  <option value="entry">Auto / Entry</option>
+                  <option value="positionSize">Position size</option>
+                  <option value="riskAmount">Risk amount</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="chip-row compact-top" id="calcRiskPresets">
+              <button class="chip risk-chip" data-risk="0.25">0.25%</button>
+              <button class="chip risk-chip active" data-risk="0.4">0.40%</button>
+              <button class="chip risk-chip" data-risk="0.5">0.50%</button>
+              <button class="chip risk-chip" data-risk="1">1.00%</button>
+            </div>
+
+            <div class="form-grid form-grid-3 compact-top">
+              <label class="field field-xl"><span>Entry</span><input id="calcEntry" type="number" step="0.01" placeholder="0" /></label>
+              <label class="field"><span>SL price</span><input id="calcSlPrice" type="number" step="0.01" placeholder="0" /></label>
+              <label class="field"><span>SL %</span><input id="calcSlPercent" type="number" step="0.01" placeholder="0" /></label>
+              <label class="field"><span>Position size</span><input id="calcPositionSize" type="number" step="1" placeholder="0" /></label>
+              <label class="field"><span>Risk amount</span><input id="calcRiskAmount" type="number" step="1" placeholder="0" /></label>
+              <label class="field"><span>Trail SL</span><input id="calcTrailPrice" type="number" step="0.01" placeholder="0" /></label>
+            </div>
+
+            <div class="calc-hint-row compact-top">
+              <div id="calcDirectionPill" class="pill pill-muted">Waiting for setup</div>
+              <div id="calcHint" class="panel-note">Tip: typing in position size or risk amount automatically changes the solving mode.</div>
+            </div>
+          </div>
+
+          <div class="panel calc-result-panel">
+            <div class="panel-title">Live position summary</div>
+            <div class="calc-hero-value" id="calcValue">₹0</div>
+            <div class="calc-hero-sub">Total planned position value</div>
+            <div class="stats-grid compact-top">
+              <div class="panel metric-card"><div class="metric-label">Quantity</div><div id="calcQty" class="metric-value">0</div></div>
+              <div class="panel metric-card"><div class="metric-label">Actual risk</div><div id="calcActualRisk" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">Size %</div><div id="calcPositionPercent" class="metric-value">0%</div></div>
+              <div class="panel metric-card"><div class="metric-label">Risk of capital</div><div id="calcRiskCapitalPercent" class="metric-value">0%</div></div>
+              <div class="panel metric-card"><div class="metric-label">Locked by trail</div><div id="calcTrailLocked" class="metric-value">₹0</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="analytics-grid compact-top">
+          <div class="panel">
+            <div class="section-row">
+              <div>
+                <div class="section-title">Target simulator</div>
+                <p class="section-copy">Solve by R, percent move, or exit price. Charges update automatically.</p>
+              </div>
+              <div class="pill pill-muted">Short trades work too when stop is above entry</div>
+            </div>
+            <div class="form-grid form-grid-3 compact-top">
+              <label class="field"><span>Target R</span><input id="targetR" type="number" step="0.1" placeholder="3" /></label>
+              <label class="field"><span>Target %</span><input id="targetPercent" type="number" step="0.1" placeholder="5" /></label>
+              <label class="field"><span>Exit price</span><input id="targetExitPrice" type="number" step="0.01" placeholder="0" /></label>
+            </div>
+            <div class="stats-grid compact-top">
+              <div class="panel metric-card"><div class="metric-label">Projected P&amp;L</div><div id="targetPnl" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">Net after charges</div><div id="targetNetPnl" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">Brokerage</div><div id="chargesBrokerage" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">STT</div><div id="chargesStt" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">Other</div><div id="chargesOther" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">Total charges</div><div id="chargesTotal" class="metric-value">₹0</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-mbi" class="tab-panel">
+        <div class="panel">
+          <div class="section-row">
+            <div>
+              <div class="section-title">SuperMBI • next-day regime score</div>
+              <p class="section-copy">This now matches your conservative SuperMBI workflow exactly: 11-pillar CurrentScore + 3-day burst filters from Dashboard A:AG.</p>
+            </div>
+            <div class="toolbar-actions stretch-mobile">
+              <button id="mbiImportBtn" class="btn btn-ghost">Import Dashboard CSV</button>
+              <input id="mbiHistoryInput" type="file" accept=".csv,text/csv,.txt,text/plain" class="hidden" />
+              <button id="mbiApplyTextareaBtn" class="btn btn-primary">Calculate from pasted rows</button>
+              <button id="mbiClearHistoryBtn" class="btn btn-ghost">Clear history</button>
+            </div>
+          </div>
+          <p class="panel-note compact-top">Use Dashboard A:AG exported from Excel. The app automatically converts decimal fields like <code>0.1416</code> → <code>14.16</code> for G, Q, X, Y, AE, AF, and AG.</p>
+          <label class="field compact-top">
+            <span>Paste Dashboard A:AG history (header + latest rows)</span>
+            <textarea id="mbiHistoryText" rows="6" placeholder="Paste CSV rows from Dashboard A:AG here. At least 3 rows are needed to auto-calc Adv3 and NewHigh3."></textarea>
+          </label>
+          <div id="mbiHistoryMeta" class="panel-note compact-top">No Dashboard history imported yet. You can still type the fields manually below.</div>
+        </div>
+
+        <div class="panel compact-top">
+          <div class="section-title">Manual / auto-filled inputs</div>
+          <p class="section-copy">Import history to auto-fill the latest row, or type values manually in percentage points / direct units exactly as your sheet uses after conversion.</p>
+          <div class="form-grid form-grid-4 compact-top">
+            <label class="field"><span>Above 20 MA pts</span><input id="mbiA20" type="number" step="0.01" /></label>
+            <label class="field"><span>Above 50 MA pts</span><input id="mbiA50" type="number" step="0.01" /></label>
+            <label class="field"><span>Above 200 MA pts</span><input id="mbiA200" type="number" step="0.01" /></label>
+            <label class="field"><span>Net breadth</span><input id="mbiNb" type="number" step="0.01" /></label>
+            <label class="field"><span>New 52W High pts</span><input id="mbiWh" type="number" step="0.01" /></label>
+            <label class="field"><span>New 52W Low pts</span><input id="mbiWl" type="number" step="0.01" /></label>
+            <label class="field"><span>BO S/F ratio</span><input id="mbiBosf" type="number" step="0.01" /></label>
+            <label class="field"><span>UH/LH ratio</span><input id="mbiUhlh" type="number" step="0.01" /></label>
+            <label class="field"><span>Volume</span><input id="mbiVol" type="number" step="0.01" /></label>
+            <label class="field"><span>4% Advance pts</span><input id="mbiAdv" type="number" step="0.01" /></label>
+            <label class="field"><span>Net 15% H-L</span><input id="mbiNhl" type="number" step="0.01" /></label>
+            <label class="field"><span>Breakdowns pts</span><input id="mbiBd" type="number" step="0.01" /></label>
+            <label class="field"><span>Adv3 pts</span><input id="mbiAdv3Pts" type="number" step="0.01" /></label>
+            <label class="field"><span>NewHigh3 pts</span><input id="mbiNewHigh3Pts" type="number" step="0.01" /></label>
+          </div>
+        </div>
+
+        <div class="analytics-grid compact-top">
+          <div class="panel">
+            <div class="score-wrap">
+              <div class="metric-label">SuperMBI</div>
+              <div id="mbiScore" class="score-number">—</div>
+              <div id="mbiZone" class="score-zone">Fill all inputs</div>
+              <p id="mbiActionText" class="section-copy score-copy">Your next-day participation rule will appear here.</p>
+              <p id="mbiStatsText" class="panel-note compact-top">CurrentScore, Adv3, and NewHigh3 will appear here.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Participation + open-position overlay</div>
+            <div id="mbiSignals" class="signal-list"></div>
+            <div id="mbiSellSignals" class="signal-list compact-top"></div>
+            <div id="mbiSizing" class="sizing-box"></div>
+          </div>
+          <div class="panel full-span">
+            <div class="panel-title">Pillar breakdown</div>
+            <div id="mbiBreakdown" class="breakdown-grid"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Recent SuperMBI history</div>
+            <div class="chart-box"><canvas id="mbiHistoryChart"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Latest imported rows</div>
+            <div id="mbiHistoryTable" class="table-wrap empty-state">Import Dashboard A:AG rows to see recent CurrentScore and SuperMBI history.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-playbook" class="tab-panel">
+        <div class="analytics-grid">
+          <div class="panel full-span">
+            <div class="section-title">Playbook</div>
+            <p class="section-copy">This keeps the spirit of your original Guide tab. Your live next-day regime score now comes from SuperMBI in the MBI tab; use this playbook as secondary context and execution guidance.</p>
+          </div>
+          <div class="panel full-span">
+            <div class="panel-title">Swing framework</div>
+            <div class="table-wrap">
+              <table class="guide-table">
+                <thead>
+                  <tr><th>Legacy guide zone</th><th>Swing action</th><th>How aggressive?</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>35+</td><td>Best VCP / flag / contraction breakouts. Let winners run 10-15 days.</td><td>Max aggression</td></tr>
+                  <tr><td>25-34</td><td>2-3 clean swing names only. Full process, not random chasing.</td><td>Full size</td></tr>
+                  <tr><td>15-24</td><td>Best-quality setups only. 2 positions max.</td><td>Normal</td></tr>
+                  <tr><td>5-14</td><td>One smaller swing position. Tight stops, faster profit-taking.</td><td>Reduced</td></tr>
+                  <tr><td>-5 to 4</td><td>No fresh positions unless exceptional.</td><td>Minimal</td></tr>
+                  <tr><td>&lt; -5</td><td>Protect capital. Weak breadth can ruin otherwise good charts.</td><td>Avoid</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel full-span">
+            <div class="panel-title">Intraday framework</div>
+            <div class="table-wrap">
+              <table class="guide-table">
+                <thead>
+                  <tr><th>Legacy guide zone</th><th>Intraday action</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>35+</td><td>Allowed on strongest gap-ups and AVWAP structures.</td><td>Best backdrop</td></tr>
+                  <tr><td>25-34</td><td>Selective but valid.</td><td>Prefer high relative volume</td></tr>
+                  <tr><td>20-24</td><td>Only best names, best conditions.</td><td>Smaller size</td></tr>
+                  <tr><td>5-19</td><td>Mostly skip, unless breadth thrust is obvious.</td><td>Cherry-pick only</td></tr>
+                  <tr><td>&lt; 5</td><td>Skip breakout intraday.</td><td>Edge usually disappears</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Sell rules</div>
+            <ul class="rule-list compact-top">
+              <li>Hit planned stop → exit, do not negotiate.</li>
+              <li>If SuperMBI weakens below your participation threshold, reduce aggressively.</li>
+              <li>52W lows expand hard → protect capital first.</li>
+              <li>At +5% to +7% → partial book and trail rest.</li>
+              <li>Past max hold window → review for time stop.</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Sizing anchors</div>
+            <ul class="rule-list compact-top">
+              <li>Calculator first, conviction second.</li>
+              <li>Risk in rupees matters more than gut feel.</li>
+              <li>Reduce size automatically in cautious zones.</li>
+              <li>Never let pyramiding break planned-risk discipline.</li>
+              <li>Use the journal to review which size regimes work best.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-sell" class="tab-panel">
+        <div class="analytics-grid">
+          <div class="panel">
+            <div class="section-title">Quick sell calculator</div>
+            <div class="form-grid form-grid-2 compact-top">
+              <label class="field"><span>Buy price</span><input id="sellBuyPrice" type="number" step="0.01" /></label>
+              <label class="field"><span>Current price</span><input id="sellCurrentPrice" type="number" step="0.01" /></label>
+              <label class="field"><span>Quantity</span><input id="sellQty" type="number" step="1" /></label>
+              <label class="field"><span>Days held</span><input id="sellDaysHeld" type="number" step="1" /></label>
+            </div>
+            <div class="stats-grid compact-top">
+              <div class="panel metric-card"><div class="metric-label">P&amp;L</div><div id="sellPnl" class="metric-value">₹0</div></div>
+              <div class="panel metric-card"><div class="metric-label">P&amp;L %</div><div id="sellPnlPercent" class="metric-value">0%</div></div>
+            </div>
+            <div id="sellAdvice" class="panel-note compact-top">Enter values to see advice.</div>
+          </div>
+          <div class="panel">
+            <div class="section-title">Sell checklist</div>
+            <div class="form-grid form-grid-2 compact-top">
+              <label class="field"><span>Current SuperMBI</span><input id="sellMbiScore" type="number" step="1" /></label>
+              <label class="field"><span>Previous day score</span><input id="sellPrevScore" type="number" step="1" /></label>
+              <label class="field"><span>52W lows %</span><input id="sell52wLows" type="number" step="0.1" /></label>
+              <label class="field"><span>Above 20MA %</span><input id="sellAbove20" type="number" step="0.1" /></label>
+            </div>
+            <div id="sellChecklist" class="checklist compact-top"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-journal" class="tab-panel">
+        <div class="panel">
+          <div class="section-row journal-head">
+            <div>
+              <div class="section-title">Trade Journal</div>
+              <p class="section-copy">Log every buy and sell leg separately. The journal calculates scale-ins, partial exits, open quantity, weighted-average or FIFO P&amp;L, and analytics automatically.</p>
+            </div>
+            <div class="toolbar-actions stretch-mobile">
+              <button id="importTradebookBtn" class="btn btn-ghost">Import tradebook CSV</button>
+              <input id="importTradebookInput" type="file" accept=".csv,text/csv" class="hidden" />
+              <button id="exportCsvBtn" class="btn btn-ghost">Export CSV</button>
+              <button id="exportJsonBtn" class="btn btn-ghost">Export JSON</button>
+              <button id="openTradeModalBtn" class="btn btn-primary">+ New trade</button>
+            </div>
+          </div>
+
+          <div class="toolbar-grid journal-filter-grid compact-top">
+            <label class="field">
+              <span>Search</span>
+              <input id="searchInput" type="search" placeholder="Symbol, strategy, tag, notes" />
+            </label>
+            <label class="field">
+              <span>Period</span>
+              <select id="periodPresetFilter">
+                <option value="ALL">All time</option>
+                <option value="THIS_MONTH">This month</option>
+                <option value="LAST_30">Last 30 days</option>
+                <option value="LAST_90">Last 90 days</option>
+                <option value="YTD">Year to date</option>
+                <option value="CUSTOM">Custom dates</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Status</span>
+              <select id="statusFilter">
+                <option value="ALL">All</option>
+                <option value="OPEN">Open</option>
+                <option value="CLOSED">Closed</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Direction</span>
+              <select id="directionFilter">
+                <option value="ALL">All</option>
+                <option value="LONG">Long</option>
+                <option value="SHORT">Short</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Result</span>
+              <select id="resultFilter">
+                <option value="ALL">All</option>
+                <option value="WIN">Winners</option>
+                <option value="LOSS">Losers</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Timeframe</span>
+              <select id="timeframeFilter">
+                <option value="ALL">All</option>
+                <option value="SWING">Swing</option>
+                <option value="MTF">MTF</option>
+                <option value="MIS">MIS / Intraday</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Strategy</span>
+              <select id="strategyFilter">
+                <option value="ALL">All</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Min SuperMBI</span>
+              <input id="minMbiFilter" type="number" step="1" placeholder="55" />
+            </label>
+            <label class="field">
+              <span>Loss worse than %</span>
+              <input id="lossThresholdFilter" type="number" step="0.1" placeholder="3" />
+            </label>
+            <label class="field">
+              <span>Abs move ≥ %</span>
+              <input id="moveThresholdFilter" type="number" step="0.1" placeholder="5" />
+            </label>
+            <label class="field">
+              <span>Sort</span>
+              <select id="sortSelect">
+                <option value="DATE_DESC">Newest first</option>
+                <option value="DATE_ASC">Oldest first</option>
+                <option value="PNL_DESC">P&amp;L high → low</option>
+                <option value="PNL_ASC">P&amp;L low → high</option>
+                <option value="R_DESC">Highest R</option>
+                <option value="RETURN_DESC">Best move %</option>
+                <option value="MOVE_DESC">Highest absolute move %</option>
+                <option value="HOLD_DESC">Longest hold</option>
+                <option value="MBI_DESC">Highest SuperMBI</option>
+                <option value="SYMBOL_ASC">Symbol A → Z</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>From</span>
+              <input id="fromDateFilter" type="date" />
+            </label>
+            <label class="field">
+              <span>To</span>
+              <input id="toDateFilter" type="date" />
+            </label>
+          </div>
+          <div id="journalFilterSummary" class="panel-note compact-top">Journal, Dashboard, and AI Coach all respect the active period and trade filters.</div>
+          <div id="importSummary" class="panel-note compact-top">Tradebook CSV import accepts raw broker tradebook rows and groups them into flat-to-flat journal trades automatically.</div>
+        </div>
+
+        <div id="journalTable" class="trade-table-wrap"></div>
+      </section>
+
+      <section id="tab-dashboard" class="tab-panel">
+        <div class="panel">
+          <div class="section-row">
+            <div>
+              <div class="section-title">Performance Dashboard</div>
+              <p class="section-copy">All charts and analysis below respect the active period, result, timeframe, move, and SuperMBI filters from the Journal tab.</p>
+            </div>
+            <button id="addTradeFromDashboard" class="btn btn-primary">+ Add trade</button>
+          </div>
+          <div id="dashboardFilterSummary" class="panel-note compact-top"></div>
+          <div id="summaryCards" class="stats-grid compact-top"></div>
+          <div id="dashboardInsightCards" class="stats-grid compact-top"></div>
+          <div id="dashboardInsights" class="coach-list compact-top"></div>
+        </div>
+
+        <div class="analytics-grid compact-top">
+          <div class="panel chart-panel">
+            <div class="panel-title">Equity curve</div>
+            <div class="chart-box"><canvas id="equityChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Monthly P&amp;L</div>
+            <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Strategy P&amp;L</div>
+            <div class="chart-box"><canvas id="strategyChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Weekday win rate</div>
+            <div class="chart-box"><canvas id="weekdayChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Timeframe P&amp;L</div>
+            <div class="chart-box"><canvas id="timeframeChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">SuperMBI bucket P&amp;L</div>
+            <div class="chart-box"><canvas id="dashboardMbiChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="panel compact-top">
+          <div class="section-title">Recent trades</div>
+          <div id="recentTrades" class="trade-list compact-top"></div>
+        </div>
+      </section>
+
+      <section id="tab-coach" class="tab-panel">
+        <div class="panel">
+          <div class="section-row">
+            <div>
+              <div class="section-title">AI Coach</div>
+              <p class="section-copy">Local AI-style analysis turns your journal into strengths, leaks, and a concrete improvement plan. No external API key is required.</p>
+            </div>
+            <div class="toolbar-actions stretch-mobile">
+              <button id="copyCoachPromptBtn" class="btn btn-ghost">Copy review prompt</button>
+            </div>
+          </div>
+          <div class="coach-head compact-top">
+            <div>
+              <div id="coachVerdict" class="coach-verdict">Waiting for trades</div>
+              <p id="coachSummary" class="section-copy">Import or log some trades to unlock the coach.</p>
+            </div>
+            <div id="coachScorePill" class="pill pill-muted">0 / 100</div>
+          </div>
+          <div id="coachMetaCards" class="stats-grid compact-top"></div>
+        </div>
+
+        <div class="analytics-grid compact-top">
+          <div class="panel">
+            <div class="panel-title">Strengths</div>
+            <div id="coachStrengths" class="coach-list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Leaks</div>
+            <div id="coachLeaks" class="coach-list"></div>
+          </div>
+          <div class="panel full-span">
+            <div class="panel-title">Improvement plan</div>
+            <div id="coachActions" class="coach-list"></div>
+          </div>
+          <div class="panel full-span">
+            <div class="panel-title">Pattern map</div>
+            <div id="coachPatternCards" class="stats-grid"></div>
+          </div>
+        </div>
+
+        <div class="analytics-grid compact-top">
+          <div class="panel chart-panel">
+            <div class="panel-title">SuperMBI bucket P&amp;L</div>
+            <div class="chart-box"><canvas id="mbiBucketChart"></canvas></div>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-title">Hold bucket P&amp;L</div>
+            <div class="chart-box"><canvas id="holdBucketChart"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-winners" class="tab-panel">
+        <div class="panel">
+          <div class="section-row">
+            <div>
+              <div class="section-title">Winner Database</div>
+              <p class="section-copy">Build your personal database of monster winners so you can study the best bases, biggest moves, stage-4 declines, and the regimes that deserve your biggest size.</p>
+            </div>
+            <button id="openWinnerModalBtn" class="btn btn-primary">+ Add winner</button>
+          </div>
+          <div class="toolbar-grid winner-filter-grid compact-top">
+            <label class="field"><span>Search</span><input id="winnerSearchInput" type="search" placeholder="Stock, sector, setup, notes" /></label>
+            <label class="field"><span>Sector</span><select id="winnerSectorFilter"><option value="ALL">All</option></select></label>
+            <label class="field"><span>Type</span><select id="winnerTypeFilter"><option value="ALL">All</option></select></label>
+            <label class="field"><span>Setup</span><select id="winnerSetupFilter"><option value="ALL">All</option></select></label>
+            <label class="field"><span>Timeframe</span><select id="winnerTimeframeFilter"><option value="ALL">All</option><option value="SWING">Swing</option><option value="MTF">MTF</option><option value="MIS">MIS / Intraday</option></select></label>
+            <label class="field"><span>Period</span><select id="winnerPeriodFilter"><option value="ALL">All</option></select></label>
+            <label class="field"><span>Min move %</span><input id="winnerMinMoveFilter" type="number" step="0.1" placeholder="20" /></label>
+            <label class="field"><span>Min initial move %</span><input id="winnerMinInitialMoveFilter" type="number" step="0.1" placeholder="8" /></label>
+            <label class="field"><span>Max stage-4 decline %</span><input id="winnerMaxStage4Filter" type="number" step="0.1" placeholder="25" /></label>
+            <label class="field"><span>Min SuperMBI</span><input id="winnerMinMbiFilter" type="number" step="1" placeholder="55" /></label>
+            <label class="field"><span>Image</span><select id="winnerHasImageFilter"><option value="ALL">All</option><option value="YES">Has image</option><option value="NO">No image</option></select></label>
+            <label class="field"><span>Sort</span><select id="winnerSortSelect"><option value="DATE_DESC">Newest first</option><option value="MOVE_DESC">Biggest move</option><option value="INITIAL_DESC">Biggest initial move</option><option value="BASE_DESC">Longest base</option><option value="STAGE4_ASC">Smallest stage-4 decline</option><option value="CIRCUIT_DESC">Most circuits</option><option value="MBI_DESC">Highest SuperMBI</option><option value="NAME_ASC">Stock A → Z</option></select></label>
+          </div>
+          <div id="winnerFilterSummary" class="panel-note compact-top">Study only the best historical winners that match your current focus.</div>
+          <div id="winnerSummaryCards" class="stats-grid compact-top"></div>
+        </div>
+        <div id="winnerTable" class="trade-table-wrap"></div>
+      </section>
+
+      <section id="tab-settings" class="tab-panel">
+        <div class="analytics-grid">
+          <div class="panel">
+            <div class="section-title">Journal settings</div>
+            <div class="form-grid form-grid-2 compact-top">
+              <label class="field">
+                <span>P&amp;L method</span>
+                <select id="settingsPnlMethod">
+                  <option value="AVERAGE">Weighted average</option>
+                  <option value="FIFO">FIFO</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Base currency</span>
+                <select id="settingsCurrency">
+                  <option value="INR">INR</option>
+                  <option value="USD">USD</option>
+                </select>
+              </label>
+            </div>
+            <div class="toolbar-actions compact-top stretch-mobile">
+              <button id="saveSettingsBtn" class="btn btn-primary">Save settings</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="section-title">Backup &amp; restore</div>
+            <p class="section-copy">Firestore is the main database. Drive backup writes a JSON snapshot to your hidden appDataFolder.</p>
+            <div class="toolbar-actions compact-top stretch-mobile">
+              <button id="backupDriveBtn" class="btn btn-ghost">Backup to Google Drive</button>
+              <button id="restoreDriveBtn" class="btn btn-ghost">Restore from Drive</button>
+              <button id="importJsonBtn" class="btn btn-ghost">Import JSON file</button>
+              <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
+            </div>
+          </div>
+          <div class="panel full-span">
+            <div class="section-title">Deployment notes</div>
+            <ol class="deploy-list compact-top">
+              <li>Enable Google sign-in in Firebase Authentication.</li>
+              <li>Create Firestore and paste your config into <code>js/config.js</code>.</li>
+              <li>Enable the Google Drive API only if you want Drive backup.</li>
+              <li>Deploy this folder with Firebase Hosting free tier.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="tradeModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+      <div class="section-row">
+        <div>
+          <div id="tradeModalTitle" class="section-title">New trade</div>
+          <p class="section-copy">Add every executed leg so the journal can calculate pyramiding and staggered exits correctly.</p>
+        </div>
+        <button id="closeTradeModalBtn" class="btn btn-ghost">Close</button>
+      </div>
+      <form id="tradeForm" class="trade-form">
+        <input id="tradeId" type="hidden" />
+        <div class="form-grid form-grid-3 compact-top">
+          <label class="field"><span>Symbol</span><input id="tradeSymbol" type="text" placeholder="RELIANCE" required /></label>
+          <label class="field"><span>Direction</span>
+            <select id="tradeDirection">
+              <option value="LONG">Long</option>
+              <option value="SHORT">Short</option>
+            </select>
+          </label>
+          <label class="field"><span>Timeframe</span>
+            <select id="tradeTimeframe">
+              <option value="AUTO">Auto from hold</option>
+              <option value="SWING">Swing</option>
+              <option value="MTF">MTF</option>
+              <option value="MIS">MIS / Intraday</option>
+            </select>
+          </label>
+          <label class="field"><span>Strategy / setup</span><input id="tradeStrategy" type="text" placeholder="VCP / AVWAP / Swing" /></label>
+          <label class="field"><span>Planned risk</span><input id="tradePlannedRisk" type="number" step="1" placeholder="11200" /></label>
+          <label class="field"><span>Planned stop</span><input id="tradePlannedStop" type="number" step="0.01" placeholder="2480" /></label>
+          <label class="field"><span>SuperMBI snapshot</span><input id="tradeMbiScore" type="number" step="1" placeholder="61.2" /></label>
+        </div>
+        <label class="field compact-top"><span>Tags (comma separated)</span><input id="tradeTags" type="text" placeholder="earnings, gap-up, rule-followed" /></label>
+        <label class="field compact-top"><span>Notes</span><textarea id="tradeNotes" rows="3" placeholder="Setup, mistake, lesson, emotions, screenshot link, thesis"></textarea></label>
+
+        <div class="section-row compact-top">
+          <div>
+            <div class="panel-title">Executed fills</div>
+            <p class="section-copy">Add one row per buy or sell. This is how the journal gets pyramiding and partial exits right.</p>
+          </div>
+          <div class="toolbar-actions stretch-mobile">
+            <button id="addBuyFillBtn" type="button" class="btn btn-ghost">+ Buy leg</button>
+            <button id="addSellFillBtn" type="button" class="btn btn-ghost">+ Sell leg</button>
+          </div>
+        </div>
+
+        <div id="fillsContainer" class="fills-list"></div>
+
+        <div class="panel compact-top accent-panel">
+          <div class="panel-title">Live trade metrics</div>
+          <div id="tradeMetricsPreview" class="stats-grid compact-top"></div>
+        </div>
+
+        <div class="section-row compact-top">
+          <div class="toolbar-actions stretch-mobile">
+            <button id="saveTradeBtn" type="submit" class="btn btn-primary">Save trade</button>
+            <button id="duplicateTradeBtn" type="button" class="btn btn-ghost hidden">Duplicate</button>
+          </div>
+          <button id="deleteTradeBtn" type="button" class="btn btn-danger hidden">Delete trade</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="winnerModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-winner-modal></div>
+    <div class="modal-card">
+      <div class="section-row">
+        <div>
+          <div id="winnerModalTitle" class="section-title">New winner</div>
+          <p class="section-copy">Capture the characteristics of the stocks that made your biggest money so you can size the best patterns aggressively and recognise stage-4 risk early.</p>
+        </div>
+        <button id="closeWinnerModalBtn" class="btn btn-ghost">Close</button>
+      </div>
+      <form id="winnerForm" class="trade-form" novalidate>
+        <input id="winnerId" type="hidden" />
+        <div class="form-grid form-grid-3 compact-top">
+          <label class="field"><span>Stock name</span><input id="winnerStockName" type="text" placeholder="WAAREEENER" /></label>
+          <label class="field"><span>Sector</span><input id="winnerSector" type="text" placeholder="Power / Defence / Rail" /></label>
+          <label class="field"><span>Type</span><input id="winnerType" type="text" placeholder="Leader / IPO / Turnaround" /></label>
+          <label class="field"><span>Setup</span><input id="winnerSetup" type="text" placeholder="VCP / IPO base / Flag / AVWAP" /></label>
+          <label class="field"><span>Timeframe</span><select id="winnerTimeframe"><option value="SWING">Swing</option><option value="MTF">MTF</option><option value="MIS">MIS / Intraday</option></select></label>
+          <label class="field"><span>Breakout date</span><input id="winnerBreakoutDate" type="date" /></label>
+          <label class="field"><span># Circuit</span><input id="winnerCircuits" type="number" step="1" placeholder="3" /></label>
+          <label class="field"><span>Period</span><input id="winnerPeriod" type="text" placeholder="6 weeks / 11 days / stage-2" /></label>
+          <label class="field"><span>SuperMBI</span><input id="winnerMbiScore" type="number" step="1" placeholder="63" /></label>
+          <label class="field"><span>Initial move %</span><input id="winnerInitialMove" type="number" step="0.1" placeholder="9.5" /></label>
+          <label class="field"><span>Base length</span><input id="winnerBaseLength" type="number" step="0.1" placeholder="24" /></label>
+          <label class="field"><span>Total move %</span><input id="winnerMove" type="number" step="0.1" placeholder="48" /></label>
+          <label class="field"><span>Stage-4 decline %</span><input id="winnerStage4Decline" type="number" step="0.1" placeholder="21" /></label>
+          <label class="field full-span">
+            <span>Screenshot upload</span>
+            <div class="toolbar-actions stretch-mobile compact-top">
+              <button id="pickWinnerImageBtn" type="button" class="btn btn-ghost">Upload screenshot</button>
+              <button id="clearWinnerImageBtn" type="button" class="btn btn-ghost">Remove image</button>
+              <input id="winnerImageFile" type="file" accept="image/*" class="hidden" />
+              <input id="winnerImageStoragePath" type="hidden" />
+            </div>
+            <div class="small-copy compact-top">Images are resized and compressed in your browser before upload to keep storage usage low. File uploads need Firebase Storage in cloud mode.</div>
+          </label>
+          <label class="field full-span"><span>Image URL (optional external link)</span><input id="winnerImageUrl" type="text" inputmode="url" placeholder="Paste a chart image URL, or upload a screenshot above" /></label>
+        </div>
+        <label class="field compact-top"><span>Tags (comma separated)</span><input id="winnerTags" type="text" placeholder="tight base, high RS, fresh stage-2" /></label>
+        <label class="field compact-top"><span>Notes / lessons</span><textarea id="winnerNotes" rows="4" placeholder="What made this stock special? When should I have sized bigger? When did stage-4 risk show up?"></textarea></label>
+        <div id="winnerImagePreview" class="panel-note compact-top">Upload a screenshot or paste an external image URL.</div>
+        <div class="section-row compact-top">
+          <div class="toolbar-actions stretch-mobile">
+            <button id="saveWinnerBtn" type="submit" class="btn btn-primary">Save winner</button>
+          </div>
+          <button id="deleteWinnerBtn" type="button" class="btn btn-danger hidden">Delete winner</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="./js/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

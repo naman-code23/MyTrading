@@ -399,6 +399,10 @@
               <input id="moveThresholdFilter" type="number" step="0.1" placeholder="5" />
             </label>
             <label class="field">
+              <span>Max dip before move %</span>
+              <input id="dipBeforeMoveFilter" type="number" step="0.1" placeholder="3" />
+            </label>
+            <label class="field">
               <span>Sort</span>
               <select id="sortSelect">
                 <option value="DATE_DESC">Newest first</option>
@@ -408,6 +412,8 @@
                 <option value="R_DESC">Highest R</option>
                 <option value="RETURN_DESC">Best move %</option>
                 <option value="MOVE_DESC">Highest absolute move %</option>
+                <option value="DIP_ASC">Smallest dip before move</option>
+                <option value="DIP_DESC">Largest dip before move</option>
                 <option value="HOLD_DESC">Longest hold</option>
                 <option value="MBI_DESC">Highest SuperMBI</option>
                 <option value="SYMBOL_ASC">Symbol A → Z</option>
@@ -424,6 +430,16 @@
           </div>
           <div id="journalFilterSummary" class="panel-note compact-top">Journal, Dashboard, and AI Coach all respect the active period and trade filters.</div>
           <div id="importSummary" class="panel-note compact-top">Tradebook CSV import accepts raw broker tradebook rows and groups them into flat-to-flat journal trades automatically.</div>
+        </div>
+
+        <div class="panel compact-top">
+          <div class="section-row">
+            <div>
+              <div class="section-title">Journal Stats</div>
+              <p id="journalStatsNote" class="section-copy">Win/loss size, holding period, and open-risk stats for the current filter scope.</p>
+            </div>
+          </div>
+          <div id="journalStatsCards" class="stats-grid compact-top"></div>
         </div>
 
         <div id="journalTable" class="trade-table-wrap"></div>
@@ -547,10 +563,17 @@
             <label class="field"><span>Period</span><select id="winnerPeriodFilter"><option value="ALL">All</option></select></label>
             <label class="field"><span>Min move %</span><input id="winnerMinMoveFilter" type="number" step="0.1" placeholder="20" /></label>
             <label class="field"><span>Min initial move %</span><input id="winnerMinInitialMoveFilter" type="number" step="0.1" placeholder="8" /></label>
+            <label class="field"><span>Max dip before move %</span><input id="winnerMaxDipFilter" type="number" step="0.1" placeholder="3" /></label>
             <label class="field"><span>Max stage-4 decline %</span><input id="winnerMaxStage4Filter" type="number" step="0.1" placeholder="25" /></label>
             <label class="field"><span>Min SuperMBI</span><input id="winnerMinMbiFilter" type="number" step="1" placeholder="55" /></label>
+            <label class="field"><span>Min moves</span><input id="winnerMinMoveCountFilter" type="number" step="1" placeholder="2" /></label>
+            <label class="field"><span>Min bases</span><input id="winnerMinBaseCountFilter" type="number" step="1" placeholder="3" /></label>
+            <label class="field"><span>Min avg expansion %</span><input id="winnerMinAvgExpansionFilter" type="number" step="0.1" placeholder="5" /></label>
+            <label class="field"><span>Min best expansion %</span><input id="winnerMinMaxExpansionFilter" type="number" step="0.1" placeholder="10" /></label>
+            <label class="field"><span>Min biggest base bars</span><input id="winnerMinBiggestBaseFilter" type="number" step="0.1" placeholder="20" /></label>
+            <label class="field"><span>Max deepest base %</span><input id="winnerMaxDeepestBaseFilter" type="number" step="0.1" placeholder="18" /></label>
             <label class="field"><span>Image</span><select id="winnerHasImageFilter"><option value="ALL">All</option><option value="YES">Has image</option><option value="NO">No image</option></select></label>
-            <label class="field"><span>Sort</span><select id="winnerSortSelect"><option value="DATE_DESC">Newest first</option><option value="MOVE_DESC">Biggest move</option><option value="INITIAL_DESC">Biggest initial move</option><option value="BASE_DESC">Longest base</option><option value="STAGE4_ASC">Smallest stage-4 decline</option><option value="CIRCUIT_DESC">Most circuits</option><option value="MBI_DESC">Highest SuperMBI</option><option value="NAME_ASC">Stock A → Z</option></select></label>
+            <label class="field"><span>Sort</span><select id="winnerSortSelect"><option value="DATE_DESC">Newest first</option><option value="MOVE_DESC">Biggest move</option><option value="INITIAL_DESC">Biggest initial move</option><option value="MOVECOUNT_DESC">Most moves</option><option value="BASECOUNT_DESC">Most bases</option><option value="AVGEXP_DESC">Highest avg expansion</option><option value="MAXEXP_DESC">Highest best expansion</option><option value="BIGBASE_DESC">Biggest base</option><option value="DEEPBASE_ASC">Tightest deepest base</option><option value="DIP_ASC">Smallest dip before move</option><option value="DIP_DESC">Largest dip before move</option><option value="BASE_DESC">Longest manual base</option><option value="STAGE4_ASC">Smallest stage-4 decline</option><option value="CIRCUIT_DESC">Most circuits</option><option value="MBI_DESC">Highest SuperMBI</option><option value="NAME_ASC">Stock A → Z</option></select></label>
           </div>
           <div id="winnerFilterSummary" class="panel-note compact-top">Study only the best historical winners that match your current focus.</div>
           <div id="winnerSummaryCards" class="stats-grid compact-top"></div>
@@ -638,6 +661,7 @@
           <label class="field"><span>Planned risk</span><input id="tradePlannedRisk" type="number" step="1" placeholder="11200" /></label>
           <label class="field"><span>Planned stop</span><input id="tradePlannedStop" type="number" step="0.01" placeholder="2480" /></label>
           <label class="field"><span>SuperMBI snapshot</span><input id="tradeMbiScore" type="number" step="1" placeholder="61.2" /></label>
+          <label class="field"><span>Dip before move % (optional)</span><input id="tradeDipBeforeMove" type="number" step="0.1" placeholder="2.8" /></label>
         </div>
         <label class="field compact-top"><span>Tags (comma separated)</span><input id="tradeTags" type="text" placeholder="earnings, gap-up, rule-followed" /></label>
         <label class="field compact-top"><span>Notes</span><textarea id="tradeNotes" rows="3" placeholder="Setup, mistake, lesson, emotions, screenshot link, thesis"></textarea></label>
@@ -681,10 +705,10 @@
         </div>
         <button id="closeWinnerModalBtn" class="btn btn-ghost">Close</button>
       </div>
-      <form id="winnerForm" class="trade-form">
+      <form id="winnerForm" class="trade-form" novalidate>
         <input id="winnerId" type="hidden" />
         <div class="form-grid form-grid-3 compact-top">
-          <label class="field"><span>Stock name</span><input id="winnerStockName" type="text" placeholder="WAAREEENER" required /></label>
+          <label class="field"><span>Stock name</span><input id="winnerStockName" type="text" placeholder="WAAREEENER" /></label>
           <label class="field"><span>Sector</span><input id="winnerSector" type="text" placeholder="Power / Defence / Rail" /></label>
           <label class="field"><span>Type</span><input id="winnerType" type="text" placeholder="Leader / IPO / Turnaround" /></label>
           <label class="field"><span>Setup</span><input id="winnerSetup" type="text" placeholder="VCP / IPO base / Flag / AVWAP" /></label>
@@ -696,7 +720,21 @@
           <label class="field"><span>Initial move %</span><input id="winnerInitialMove" type="number" step="0.1" placeholder="9.5" /></label>
           <label class="field"><span>Base length</span><input id="winnerBaseLength" type="number" step="0.1" placeholder="24" /></label>
           <label class="field"><span>Total move %</span><input id="winnerMove" type="number" step="0.1" placeholder="48" /></label>
+          <label class="field"><span>Dip before move % (optional)</span><input id="winnerDipBeforeMove" type="number" step="0.1" placeholder="3.2" /></label>
           <label class="field"><span>Stage-4 decline %</span><input id="winnerStage4Decline" type="number" step="0.1" placeholder="21" /></label>
+        </div>
+        <div class="panel compact-top">
+          <div class="section-row">
+            <div>
+              <div class="panel-title">Move / base / expansion builder (optional)</div>
+              <div class="small-copy">Use E1B / E2B / E3B for the initial burst. Then map B1-B4 with their lengths, depths, and post-base expansions like E1B1, E2B1, E3B1. Add Move 2, Move 3, and so on only when you want deeper pattern analysis.</div>
+            </div>
+            <button id="addWinnerMoveBtn" type="button" class="btn btn-ghost">+ Add move</button>
+          </div>
+          <div id="winnerMovesBuilder" class="compact-top"></div>
+          <div id="winnerMovesSummary" class="panel-note compact-top">No move pattern data yet. All fields are optional.</div>
+        </div>
+        <div class="form-grid form-grid-3 compact-top">
           <label class="field full-span">
             <span>Screenshot upload</span>
             <div class="toolbar-actions stretch-mobile compact-top">
@@ -707,7 +745,7 @@
             </div>
             <div class="small-copy compact-top">Images are resized and compressed in your browser before upload to keep storage usage low. File uploads need Firebase Storage in cloud mode.</div>
           </label>
-          <label class="field full-span"><span>Image URL (optional external link)</span><input id="winnerImageUrl" type="url" placeholder="Paste a chart image URL, or upload a screenshot above" /></label>
+          <label class="field full-span"><span>Image URL (optional external link)</span><input id="winnerImageUrl" type="text" inputmode="url" placeholder="Paste a chart image URL, or upload a screenshot above" /></label>
         </div>
         <label class="field compact-top"><span>Tags (comma separated)</span><input id="winnerTags" type="text" placeholder="tight base, high RS, fresh stage-2" /></label>
         <label class="field compact-top"><span>Notes / lessons</span><textarea id="winnerNotes" rows="4" placeholder="What made this stock special? When should I have sized bigger? When did stage-4 risk show up?"></textarea></label>

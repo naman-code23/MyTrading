@@ -555,7 +555,7 @@
             <button id="openWinnerModalBtn" class="btn btn-primary">+ Add winner</button>
           </div>
           <div class="toolbar-grid winner-filter-grid compact-top">
-            <label class="field"><span>Search</span><input id="winnerSearchInput" type="search" placeholder="Stock, sector, setup, notes" /></label>
+            <label class="field"><span>Search</span><input id="winnerSearchInput" type="search" placeholder="Stock, sector, setup, tags, notes" /></label>
             <label class="field"><span>Sector</span><select id="winnerSectorFilter"><option value="ALL">All</option></select></label>
             <label class="field"><span>Type</span><select id="winnerTypeFilter"><option value="ALL">All</option></select></label>
             <label class="field"><span>Setup</span><select id="winnerSetupFilter"><option value="ALL">All</option></select></label>
@@ -567,16 +567,23 @@
             <label class="field"><span>Max stage-4 decline %</span><input id="winnerMaxStage4Filter" type="number" step="0.1" placeholder="25" /></label>
             <label class="field"><span>Min SuperMBI</span><input id="winnerMinMbiFilter" type="number" step="1" placeholder="55" /></label>
             <label class="field"><span>Min moves</span><input id="winnerMinMoveCountFilter" type="number" step="1" placeholder="2" /></label>
+            <label class="field"><span>Min expansions</span><input id="winnerMinExpansionCountFilter" type="number" step="1" placeholder="4" /></label>
             <label class="field"><span>Min bases</span><input id="winnerMinBaseCountFilter" type="number" step="1" placeholder="3" /></label>
+            <label class="field"><span>Min cycle days</span><input id="winnerMinMoveDaysFilter" type="number" step="0.1" placeholder="12" /></label>
             <label class="field"><span>Min avg expansion %</span><input id="winnerMinAvgExpansionFilter" type="number" step="0.1" placeholder="5" /></label>
             <label class="field"><span>Min best expansion %</span><input id="winnerMinMaxExpansionFilter" type="number" step="0.1" placeholder="10" /></label>
-            <label class="field"><span>Min biggest base bars</span><input id="winnerMinBiggestBaseFilter" type="number" step="0.1" placeholder="20" /></label>
-            <label class="field"><span>Max deepest base %</span><input id="winnerMaxDeepestBaseFilter" type="number" step="0.1" placeholder="18" /></label>
+            <label class="field"><span>Min avg exp length</span><input id="winnerMinAvgExpansionLengthFilter" type="number" step="0.1" placeholder="4" /></label>
+            <label class="field"><span>Min best exp length</span><input id="winnerMinMaxExpansionLengthFilter" type="number" step="0.1" placeholder="8" /></label>
+            <label class="field"><span>Min major base bars</span><input id="winnerMinMajorBaseFilter" type="number" step="0.1" placeholder="20" /></label>
+            <label class="field"><span>Max major base depth %</span><input id="winnerMaxMajorBaseDepthFilter" type="number" step="0.1" placeholder="18" /></label>
+            <label class="field"><span>Min exp-base bars</span><input id="winnerMinExpansionBaseFilter" type="number" step="0.1" placeholder="8" /></label>
+            <label class="field"><span>Max exp-base depth %</span><input id="winnerMaxExpansionBaseDepthFilter" type="number" step="0.1" placeholder="12" /></label>
             <label class="field"><span>Image</span><select id="winnerHasImageFilter"><option value="ALL">All</option><option value="YES">Has image</option><option value="NO">No image</option></select></label>
-            <label class="field"><span>Sort</span><select id="winnerSortSelect"><option value="DATE_DESC">Newest first</option><option value="MOVE_DESC">Biggest move</option><option value="INITIAL_DESC">Biggest initial move</option><option value="MOVECOUNT_DESC">Most moves</option><option value="BASECOUNT_DESC">Most bases</option><option value="AVGEXP_DESC">Highest avg expansion</option><option value="MAXEXP_DESC">Highest best expansion</option><option value="BIGBASE_DESC">Biggest base</option><option value="DEEPBASE_ASC">Tightest deepest base</option><option value="DIP_ASC">Smallest dip before move</option><option value="DIP_DESC">Largest dip before move</option><option value="BASE_DESC">Longest manual base</option><option value="STAGE4_ASC">Smallest stage-4 decline</option><option value="CIRCUIT_DESC">Most circuits</option><option value="MBI_DESC">Highest SuperMBI</option><option value="NAME_ASC">Stock A → Z</option></select></label>
+            <label class="field"><span>Sort</span><select id="winnerSortSelect"><option value="DATE_DESC">Newest first</option><option value="MOVE_DESC">Biggest total move</option><option value="INITIAL_DESC">Biggest initial move</option><option value="MOVEDAYS_DESC">Longest cycle</option><option value="MOVECOUNT_DESC">Most moves</option><option value="EXPCOUNT_DESC">Most expansions</option><option value="BASECOUNT_DESC">Most bases</option><option value="AVGEXP_DESC">Highest avg expansion</option><option value="MAXEXP_DESC">Highest best expansion</option><option value="AVGEXPLEN_DESC">Longest avg expansion</option><option value="MAXEXPLEN_DESC">Longest best expansion</option><option value="MAJORBASE_DESC">Biggest major base</option><option value="MAJORDEPTH_ASC">Tightest major base</option><option value="EXPBASE_DESC">Biggest expansion base</option><option value="EXPDEPTH_ASC">Tightest expansion base</option><option value="DIP_ASC">Smallest dip before move</option><option value="DIP_DESC">Largest dip before move</option><option value="STAGE4_ASC">Smallest stage-4 decline</option><option value="CIRCUIT_DESC">Most circuits</option><option value="MBI_DESC">Highest SuperMBI</option><option value="NAME_ASC">Stock A → Z</option></select></label>
           </div>
           <div id="winnerFilterSummary" class="panel-note compact-top">Study only the best historical winners that match your current focus.</div>
           <div id="winnerSummaryCards" class="stats-grid compact-top"></div>
+          <div id="winnerPatternAnalysis" class="compact-top"></div>
         </div>
         <div id="winnerTable" class="trade-table-wrap"></div>
       </section>

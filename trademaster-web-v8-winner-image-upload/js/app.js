@@ -22,6 +22,8 @@ import { importTradebookCsv } from './tradebook-importer.js';
 import { formatBytes, prepareImageForUpload, revokePreparedPreview } from './image-tools.js';
 import {
   normalizeWinnerPayload,
+  normalizeWinnerMoves,
+  summarizeWinnerPattern,
   filterWinnerEntries,
   sortWinnerEntries,
   summarizeWinnerEntries,
@@ -66,6 +68,7 @@ const state = {
     minMbi: '',
     lossWorseThan: '',
     minAbsMove: '',
+    maxDipBeforeMove: '',
     sort: 'DATE_DESC',
     fromDate: '',
     toDate: '',
@@ -79,8 +82,15 @@ const state = {
     period: 'ALL',
     minMove: '',
     minInitialMove: '',
+    maxDipBeforeMove: '',
     maxStage4Decline: '',
     minMbi: '',
+    minMoveCount: '',
+    minBaseCount: '',
+    minAvgExpansion: '',
+    minMaxExpansion: '',
+    minBiggestBaseLength: '',
+    maxDeepestBase: '',
     hasImage: 'ALL',
     sort: 'DATE_DESC',
     fromDate: '',
@@ -113,6 +123,8 @@ function initRefs() {
   refs.recentTrades = $('#recentTrades');
   refs.journalTable = $('#journalTable');
   refs.journalFilterSummary = $('#journalFilterSummary');
+  refs.journalStatsCards = $('#journalStatsCards');
+  refs.journalStatsNote = $('#journalStatsNote');
   refs.tradeModal = $('#tradeModal');
   refs.tradeForm = $('#tradeForm');
   refs.tradeModalTitle = $('#tradeModalTitle');
@@ -158,6 +170,9 @@ function initRefs() {
   refs.winnerImageFile = $('#winnerImageFile');
   refs.pickWinnerImageBtn = $('#pickWinnerImageBtn');
   refs.clearWinnerImageBtn = $('#clearWinnerImageBtn');
+  refs.winnerMovesBuilder = $('#winnerMovesBuilder');
+  refs.winnerMovesSummary = $('#winnerMovesSummary');
+  refs.addWinnerMoveBtn = $('#addWinnerMoveBtn');
 }
 
 function showToast(message, kind = 'info') {
@@ -191,6 +206,38 @@ function winnerImageEmptyState() {
 
 function requireCloudAuth() {
   return state.mode === 'demo' || Boolean(state.user);
+}
+
+function isPresent(value) {
+  return value != null && value !== '';
+}
+
+function hasWinnerContent(entry = {}, pendingImage = null) {
+  return Boolean(
+    entry.stockName
+    || entry.sector
+    || entry.type
+    || entry.setup
+    || entry.period
+    || entry.breakoutDate
+    || entry.imageUrl
+    || entry.imageStoragePath
+    || entry.notes
+    || (entry.tags || []).length
+    || isPresent(entry.circuits)
+    || isPresent(entry.initialMove)
+    || isPresent(entry.baseLength)
+    || isPresent(entry.move)
+    || isPresent(entry.dipBeforeMove)
+    || isPresent(entry.stage4Decline)
+    || isPresent(entry.mbiScore)
+    || (entry.moves || []).length
+    || pendingImage,
+  );
+}
+
+function looksLikeViewableImageUrl(value = '') {
+  return /^(https?:\/\/|data:image\/|blob:)/i.test(String(value).trim());
 }
 
 function switchTab(tabName) {
@@ -283,6 +330,7 @@ function getRenderableWinners() {
 
 function activeTradeFilterLabels() {
   const labels = [];
+  if (state.filters.search) labels.push(`Search: ${state.filters.search}`);
   if (state.filters.periodPreset && state.filters.periodPreset !== 'ALL' && state.filters.periodPreset !== 'CUSTOM') labels.push(state.filters.periodPreset.replace(/_/g, ' '));
   if (state.filters.status && state.filters.status !== 'ALL') labels.push(state.filters.status);
   if (state.filters.direction && state.filters.direction !== 'ALL') labels.push(state.filters.direction);
@@ -292,12 +340,14 @@ function activeTradeFilterLabels() {
   if (state.filters.minMbi) labels.push(`SuperMBI ≥ ${state.filters.minMbi}`);
   if (state.filters.lossWorseThan) labels.push(`Loss ≤ -${state.filters.lossWorseThan}%`);
   if (state.filters.minAbsMove) labels.push(`Abs move ≥ ${state.filters.minAbsMove}%`);
+  if (state.filters.maxDipBeforeMove) labels.push(`Dip ≤ ${state.filters.maxDipBeforeMove}%`);
   if (state.filters.fromDate || state.filters.toDate) labels.push(`${state.filters.fromDate || '...'} → ${state.filters.toDate || '...'}`);
   return labels;
 }
 
 function activeWinnerFilterLabels() {
   const labels = [];
+  if (state.winnerFilters.search) labels.push(`Search: ${state.winnerFilters.search}`);
   if (state.winnerFilters.sector && state.winnerFilters.sector !== 'ALL') labels.push(`Sector: ${state.winnerFilters.sector}`);
   if (state.winnerFilters.type && state.winnerFilters.type !== 'ALL') labels.push(`Type: ${state.winnerFilters.type}`);
   if (state.winnerFilters.setup && state.winnerFilters.setup !== 'ALL') labels.push(`Setup: ${state.winnerFilters.setup}`);
@@ -305,9 +355,17 @@ function activeWinnerFilterLabels() {
   if (state.winnerFilters.period && state.winnerFilters.period !== 'ALL') labels.push(`Period: ${state.winnerFilters.period}`);
   if (state.winnerFilters.minMove) labels.push(`Move ≥ ${state.winnerFilters.minMove}%`);
   if (state.winnerFilters.minInitialMove) labels.push(`Initial ≥ ${state.winnerFilters.minInitialMove}%`);
+  if (state.winnerFilters.maxDipBeforeMove) labels.push(`Dip ≤ ${state.winnerFilters.maxDipBeforeMove}%`);
   if (state.winnerFilters.maxStage4Decline) labels.push(`Stage-4 ≤ ${state.winnerFilters.maxStage4Decline}%`);
   if (state.winnerFilters.minMbi) labels.push(`SuperMBI ≥ ${state.winnerFilters.minMbi}`);
+  if (state.winnerFilters.minMoveCount) labels.push(`Moves ≥ ${state.winnerFilters.minMoveCount}`);
+  if (state.winnerFilters.minBaseCount) labels.push(`Bases ≥ ${state.winnerFilters.minBaseCount}`);
+  if (state.winnerFilters.minAvgExpansion) labels.push(`Avg expansion ≥ ${state.winnerFilters.minAvgExpansion}%`);
+  if (state.winnerFilters.minMaxExpansion) labels.push(`Best expansion ≥ ${state.winnerFilters.minMaxExpansion}%`);
+  if (state.winnerFilters.minBiggestBaseLength) labels.push(`Biggest base ≥ ${state.winnerFilters.minBiggestBaseLength} bars`);
+  if (state.winnerFilters.maxDeepestBase) labels.push(`Deepest base ≤ ${state.winnerFilters.maxDeepestBase}%`);
   if (state.winnerFilters.hasImage && state.winnerFilters.hasImage !== 'ALL') labels.push(state.winnerFilters.hasImage === 'YES' ? 'Has image' : 'No image');
+  if (state.winnerFilters.fromDate || state.winnerFilters.toDate) labels.push(`${state.winnerFilters.fromDate || '...'} → ${state.winnerFilters.toDate || '...'}`);
   return labels;
 }
 
@@ -322,6 +380,47 @@ function renderTradeFilterSummary() {
     : '<div class="filter-pill-row"><span class="pill pill-muted">No extra filters</span></div>';
   if (refs.journalFilterSummary) refs.journalFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summaryText}</div></div>${pills}`;
   if (refs.dashboardFilterSummary) refs.dashboardFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">Dashboard scope: ${summaryText}</div></div>${pills}`;
+}
+
+function renderJournalStats() {
+  if (!refs.journalStatsCards) return;
+  if (!requireCloudAuth()) {
+    refs.journalStatsCards.innerHTML = '<div class="empty-state">Sign in to see scoped journal stats.</div>';
+    if (refs.journalStatsNote) refs.journalStatsNote.textContent = 'Journal stats respect the active period and filter scope.';
+    return;
+  }
+
+  const scopedTrades = getFilteredTradesRaw();
+  const summary = summarizeJournal(scopedTrades, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const noClosedTrades = Number(summary.closedTradeCount || 0) === 0;
+  const cards = [
+    makeMetricPreviewCard('Win %', noClosedTrades ? '—' : formatPercent(summary.winRate, 1), summary.winRate >= 50 ? 'positive' : ''),
+    makeMetricPreviewCard('Loss %', noClosedTrades ? '—' : formatPercent(summary.lossRate, 1), summary.lossRate > 50 ? 'negative' : ''),
+    makeMetricPreviewCard('Win size', Number(summary.winCount || 0) ? formatCurrency(summary.grossProfit, getCurrency()) : '—', 'positive'),
+    makeMetricPreviewCard('Loss size', Number(summary.lossCount || 0) ? formatCurrency(Math.abs(summary.grossLossAbs || 0), getCurrency()) : '—', 'negative'),
+    makeMetricPreviewCard('Avg win size', Number(summary.winCount || 0) ? formatCurrency(summary.avgWin, getCurrency()) : '—', 'positive'),
+    makeMetricPreviewCard('Avg loss size', Number(summary.lossCount || 0) ? formatCurrency(Math.abs(summary.avgLossAbs || 0), getCurrency()) : '—', 'negative'),
+    makeMetricPreviewCard('Avg win hold', Number(summary.winCount || 0) ? formatDurationMinutes(summary.avgWinHoldMinutes) : '—'),
+    makeMetricPreviewCard('Avg loss hold', Number(summary.lossCount || 0) ? formatDurationMinutes(summary.avgLossHoldMinutes) : '—', summary.avgLossHoldMinutes > summary.avgWinHoldMinutes ? 'negative' : ''),
+    makeMetricPreviewCard('Avg dip before move', summary.avgDipBeforeMove != null ? formatPercent(summary.avgDipBeforeMove, 2) : '—'),
+    makeMetricPreviewCard('Avg winner dip', summary.avgWinDipBeforeMove != null ? formatPercent(summary.avgWinDipBeforeMove, 2) : '—', 'positive'),
+    makeMetricPreviewCard('Avg loser dip', summary.avgLossDipBeforeMove != null ? formatPercent(summary.avgLossDipBeforeMove, 2) : '—', summary.avgLossDipBeforeMove != null && summary.avgWinDipBeforeMove != null && summary.avgLossDipBeforeMove > summary.avgWinDipBeforeMove ? 'negative' : ''),
+    makeMetricPreviewCard('Winner dip 80% (SL guide)', summary.winnerDipP80 != null ? formatPercent(summary.winnerDipP80, 2) : '—', summary.winnerDipP80 != null ? 'warning' : ''),
+    makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
+    makeMetricPreviewCard('Peak open risk', summary.peakOpenRisk > 0 ? formatCurrency(summary.peakOpenRisk, getCurrency()) : '—', summary.peakOpenRisk > 0 ? 'warning' : ''),
+  ];
+  refs.journalStatsCards.innerHTML = cards.join('');
+
+  if (refs.journalStatsNote) {
+    const dipNote = summary.dipSampleCount > 0
+      ? `${summary.dipSampleCount} closed trade(s) in this scope include dip-before-move data.`
+      : 'Dip-before-move is optional, so add it on trades you want to use for stop analysis.';
+    if (summary.trackedRiskTradeCount > 0) {
+      refs.journalStatsNote.textContent = `Open risk uses Planned risk first, then planned stop distance when a stop exists. ${summary.trackedRiskTradeCount} trade(s) in this scope include enough risk data. ${dipNote}`;
+    } else {
+      refs.journalStatsNote.textContent = `Open risk cards need Planned risk or Planned stop on the trade to be measurable. ${dipNote}`;
+    }
+  }
 }
 
 function renderSummaryCards() {
@@ -354,8 +453,8 @@ function renderSummaryCards() {
 
   const items = getRenderableTrades();
   const closed = items.filter((trade) => trade.metrics.status === 'CLOSED');
-  const avgWinnerHold = closed.filter((trade) => trade.metrics.realizedNetPnl > 0).reduce((sum, trade, _, arr) => sum + trade.metrics.holdMinutes / (arr.length || 1), 0);
-  const avgLoserHold = closed.filter((trade) => trade.metrics.realizedNetPnl < 0).reduce((sum, trade, _, arr) => sum + trade.metrics.holdMinutes / (arr.length || 1), 0);
+  const avgWinnerHold = Number(summary.avgWinHoldMinutes || 0);
+  const avgLoserHold = Number(summary.avgLossHoldMinutes || 0);
   const bestTimeframe = groupPnlByField(scopedTrades, 'timeframe', state.settings.pnlMethod || PNL_METHODS.AVERAGE)[0];
   const symbolBuckets = groupPnlByField(scopedTrades, 'symbol', state.settings.pnlMethod || PNL_METHODS.AVERAGE);
   const bestSymbol = symbolBuckets[0];
@@ -370,6 +469,10 @@ function renderSummaryCards() {
       makeMetricPreviewCard('Weak symbol', worstSymbol ? `${worstSymbol.label}` : '—', worstSymbol?.value < 0 ? 'negative' : ''),
       makeMetricPreviewCard('Winner hold', avgWinnerHold ? formatDurationMinutes(avgWinnerHold) : '—'),
       makeMetricPreviewCard('Loser hold', avgLoserHold ? formatDurationMinutes(avgLoserHold) : '—', avgLoserHold > avgWinnerHold ? 'negative' : ''),
+      makeMetricPreviewCard('Avg winner dip', summary.avgWinDipBeforeMove != null ? formatPercent(summary.avgWinDipBeforeMove, 2) : '—'),
+      makeMetricPreviewCard('SL guide (winner dip 80%)', summary.winnerDipP80 != null ? formatPercent(summary.winnerDipP80, 2) : '—', summary.winnerDipP80 != null ? 'warning' : ''),
+      makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
+      makeMetricPreviewCard('Peak open risk', summary.peakOpenRisk > 0 ? formatCurrency(summary.peakOpenRisk, getCurrency()) : '—', summary.peakOpenRisk > 0 ? 'warning' : ''),
       makeMetricPreviewCard('Best SuperMBI', bestMbiBucket?.label || '—', bestMbiBucket?.pnl > 0 ? 'positive' : ''),
     ].join('');
   }
@@ -391,6 +494,20 @@ function renderSummaryCards() {
     }
     if (bestMbiBucket?.label) {
       insights.push(`${bestMbiBucket.label} SuperMBI conditions are producing the best filtered P&L. When the market gives that regime, you can size more aggressively.`);
+    }
+    if (summary.peakOpenRisk > 0) {
+      const nowLabel = summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '₹0';
+      insights.push(`Current open risk is ${nowLabel}, and the peak concurrent open risk in this filtered sample reached ${formatCurrency(summary.peakOpenRisk, getCurrency())}. Use that number as a ceiling when sizing new adds.`);
+    }
+    if (summary.winnerDipP80 != null) {
+      insights.push(`80% of your winners with dip data only moved ${formatPercent(summary.winnerDipP80, 2)} against you before working. That is a much better stop reference than guessing from memory.`);
+    }
+    if (summary.avgWinDipBeforeMove != null && summary.avgLossDipBeforeMove != null) {
+      if (summary.avgLossDipBeforeMove > summary.avgWinDipBeforeMove) {
+        insights.push(`Losers usually go deeper against you before failing (${formatPercent(summary.avgLossDipBeforeMove, 2)} vs winner dip ${formatPercent(summary.avgWinDipBeforeMove, 2)}). A stop tighter than the loser profile but wider than the winner profile is the sweet spot to test.`);
+      } else {
+        insights.push(`Winners are also shaking you out by about ${formatPercent(summary.avgWinDipBeforeMove, 2)} on average before working. If your stop is tighter than that, you may be cutting good trades too early.`);
+      }
     }
     if (!insights.length) insights.push('This filter scope is relatively balanced. Keep tightening entries and exits to turn decent trades into size-worthy trades.');
     refs.dashboardInsights.innerHTML = insights.map((item) => `<div class="coach-item warning">${escapeHtml(item)}</div>`).join('');
@@ -511,6 +628,7 @@ function renderTradeCard(trade) {
         <div class="stat-chip"><div class="label">Entry qty</div><div class="value">${metrics.totalEntryQty}</div></div>
         <div class="stat-chip"><div class="label">Exit qty</div><div class="value">${metrics.totalExitQty}</div></div>
         <div class="stat-chip"><div class="label">Abs move %</div><div class="value">${metrics.absMovePct != null ? formatPercent(metrics.absMovePct, 2) : '—'}</div></div>
+        <div class="stat-chip"><div class="label">Dip before move</div><div class="value">${trade.dipBeforeMove != null ? formatPercent(trade.dipBeforeMove, 2) : '—'}</div></div>
         <div class="stat-chip"><div class="label">R multiple</div><div class="value">${metrics.realizedR != null ? round(metrics.realizedR, 2).toFixed(2) : '—'}</div></div>
         <div class="stat-chip"><div class="label">Fills</div><div class="value">${metrics.fillCount}</div></div>
       </div>
@@ -571,14 +689,24 @@ function renderWinnerSummary() {
   const pills = labels.length
     ? `<div class="filter-pill-row">${labels.map((label) => `<span class="pill pill-muted">${escapeHtml(label)}</span>`).join('')}</div>`
     : '<div class="filter-pill-row"><span class="pill pill-muted">No extra filters</span></div>';
-  refs.winnerFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summary.count} records • ${summary.uniqueStocks} stocks • ${summary.withImages} images</div></div>${pills}`;
+  refs.winnerFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summary.count} records • ${summary.uniqueStocks} stocks • ${summary.patternCoverageCount || 0} with move maps • ${summary.withImages} images • ${summary.dipSampleCount || 0} dip data</div></div>${pills}`;
   refs.winnerSummaryCards.innerHTML = [
+    makeMetricPreviewCard('Records after filter', String(summary.count)),
     makeMetricPreviewCard('Stocks after filter', String(summary.uniqueStocks)),
-    makeMetricPreviewCard('Avg move %', summary.count ? formatPercent(summary.avgMove, 1) : '—', summary.avgMove >= 20 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg initial move %', summary.count ? formatPercent(summary.avgInitialMove, 1) : '—'),
-    makeMetricPreviewCard('Avg base length', summary.count ? `${summary.avgBaseLength} bars` : '—'),
-    makeMetricPreviewCard('Avg stage-4 decline', summary.count ? formatPercent(summary.avgStage4Decline, 1) : '—', summary.count && summary.avgStage4Decline <= 25 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg circuits', summary.count ? String(summary.avgCircuits) : '—'),
+    makeMetricPreviewCard('Pattern maps', String(summary.patternCoverageCount || 0), summary.patternCoverageCount ? 'positive' : ''),
+    makeMetricPreviewCard('Avg total move %', summary.avgMove != null ? formatPercent(summary.avgMove, 1) : '—', summary.avgMove != null && summary.avgMove >= 20 ? 'positive' : ''),
+    makeMetricPreviewCard('Avg initial move %', summary.avgInitialMove != null ? formatPercent(summary.avgInitialMove, 1) : '—'),
+    makeMetricPreviewCard('Avg moves / stock', summary.avgMoveCount != null ? summary.avgMoveCount.toFixed(1) : '—'),
+    makeMetricPreviewCard('Avg bases / stock', summary.avgBaseCount != null ? summary.avgBaseCount.toFixed(1) : '—'),
+    makeMetricPreviewCard('Avg expansion %', summary.avgExpansion != null ? formatPercent(summary.avgExpansion, 1) : '—'),
+    makeMetricPreviewCard('Avg best expansion %', summary.avgMaxExpansion != null ? formatPercent(summary.avgMaxExpansion, 1) : '—', summary.avgMaxExpansion != null && summary.avgMaxExpansion >= 10 ? 'positive' : ''),
+    makeMetricPreviewCard('Avg biggest base', summary.avgBiggestBase != null ? `${summary.avgBiggestBase} bars` : '—'),
+    makeMetricPreviewCard('Avg deepest base', summary.avgDeepestBase != null ? formatPercent(summary.avgDeepestBase, 1) : '—'),
+    makeMetricPreviewCard('Avg dip before move', summary.avgDipBeforeMove != null ? formatPercent(summary.avgDipBeforeMove, 1) : '—'),
+    makeMetricPreviewCard('Winner dip 80%', summary.dipP80 != null ? formatPercent(summary.dipP80, 1) : '—', summary.dipP80 != null ? 'warning' : ''),
+    makeMetricPreviewCard('Move : dip', summary.avgMoveToDip != null ? `${summary.avgMoveToDip.toFixed(2)}x` : '—', summary.avgMoveToDip != null && summary.avgMoveToDip >= 4 ? 'positive' : ''),
+    makeMetricPreviewCard('Avg stage-4 decline', summary.avgStage4Decline != null ? formatPercent(summary.avgStage4Decline, 1) : '—', summary.avgStage4Decline != null && summary.avgStage4Decline <= 25 ? 'positive' : ''),
+    makeMetricPreviewCard('Avg circuits', summary.avgCircuits != null ? String(summary.avgCircuits) : '—'),
   ].join('');
 
   if (!items.length) {
@@ -597,39 +725,55 @@ function renderWinnerSummary() {
             <th>Setup</th>
             <th>TF</th>
             <th>Period</th>
-            <th># Circuit</th>
-            <th>Initial move</th>
-            <th>Base length</th>
+            <th>Moves</th>
+            <th>Bases</th>
+            <th>Avg exp</th>
+            <th>Best exp</th>
+            <th>Biggest base</th>
+            <th>Deepest base</th>
             <th>Total move</th>
-            <th>Stage-4 decline</th>
+            <th>Dip</th>
+            <th>Stage-4</th>
             <th>SuperMBI</th>
             <th>Image</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          ${items.map((entry) => `
+          ${items.map((entry) => {
+            const meta = [];
+            if (entry.breakoutDate) meta.push(formatDate(entry.breakoutDate));
+            if (entry.effectiveInitialMove != null) meta.push(`Initial ${formatPercent(entry.effectiveInitialMove, 1)}`);
+            const patternLine = createWinnerPatternLine(entry);
+            const details = [patternLine, entry.notes].filter(Boolean).join(' • ');
+            return `
             <tr>
               <td>
                 <div class="winner-stock">${escapeHtml(entry.stockName || '—')}</div>
-                <div class="small-copy">${entry.breakoutDate ? escapeHtml(formatDate(entry.breakoutDate)) : 'No breakout date'}</div>
+                <div class="small-copy">${escapeHtml(meta.join(' • ') || 'No breakout date')}</div>
               </td>
               <td>${escapeHtml(entry.sector || '—')}</td>
               <td>${escapeHtml(entry.type || '—')}</td>
               <td>${escapeHtml(entry.setup || '—')}</td>
               <td>${escapeHtml(entry.timeframe || '—')}</td>
               <td>${escapeHtml(entry.period || '—')}</td>
-              <td>${entry.circuits || '—'}</td>
-              <td>${entry.initialMove ? formatPercent(entry.initialMove, 1) : '—'}</td>
-              <td>${entry.baseLength || '—'}</td>
-              <td class="${entry.move >= 20 ? 'positive' : ''}">${entry.move ? formatPercent(entry.move, 1) : '—'}</td>
-              <td>${entry.stage4Decline ? formatPercent(entry.stage4Decline, 1) : '—'}</td>
+              <td>${entry.pattern?.moveCount || '—'}</td>
+              <td>${entry.pattern?.totalBases || '—'}</td>
+              <td>${entry.pattern?.avgExpansion == null ? '—' : formatPercent(entry.pattern.avgExpansion, 1)}</td>
+              <td class="${entry.pattern?.maxExpansion != null && entry.pattern.maxExpansion >= 10 ? 'positive' : ''}">${entry.pattern?.maxExpansion == null ? '—' : formatPercent(entry.pattern.maxExpansion, 1)}</td>
+              <td>${entry.pattern?.maxBaseLength == null ? '—' : `${entry.pattern.maxBaseLength} bars`}</td>
+              <td>${entry.pattern?.maxBaseDepth == null ? '—' : formatPercent(entry.pattern.maxBaseDepth, 1)}</td>
+              <td class="${entry.effectiveMove != null && entry.effectiveMove >= 20 ? 'positive' : ''}">${entry.effectiveMove == null ? '—' : formatPercent(entry.effectiveMove, 1)}</td>
+              <td>${entry.dipBeforeMove == null ? '—' : formatPercent(entry.dipBeforeMove, 1)}</td>
+              <td>${entry.stage4Decline == null ? '—' : formatPercent(entry.stage4Decline, 1)}</td>
               <td>${entry.mbiScore ?? '—'}</td>
-              <td>${entry.imageUrl ? `<a href="${escapeHtml(entry.imageUrl)}" target="_blank" rel="noreferrer"><img class="table-thumb" src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.stockName || 'Winner image')}" /></a>` : '<span class="small-copy">No image</span>'}</td>
+              <td>${entry.imageUrl ? (looksLikeViewableImageUrl(entry.imageUrl)
+                ? `<a href="${escapeHtml(entry.imageUrl)}" target="_blank" rel="noreferrer"><img class="table-thumb" src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.stockName || 'Winner image')}" /></a>`
+                : '<span class="small-copy">Saved link</span>') : '<span class="small-copy">No image</span>'}</td>
               <td><button class="btn btn-ghost" data-winner-action="edit" data-winner-id="${escapeHtml(entry.id)}">Edit</button></td>
             </tr>
-            ${entry.notes ? `<tr><td colspan="14" class="small-copy">${escapeHtml(entry.notes)}</td></tr>` : ''}
-          `).join('')}
+            ${details ? `<tr><td colspan="18" class="small-copy">${escapeHtml(details)}</td></tr>` : ''}`;
+          }).join('')}
         </tbody>
       </table>
     </div>
@@ -729,6 +873,7 @@ function renderCharts() {
 function renderAll() {
   updateUserSummary();
   renderTradeFilterSummary();
+  renderJournalStats();
   renderStrategyFilter();
   renderWinnerFilterOptions();
   renderSummaryCards();
@@ -811,6 +956,7 @@ function openTradeModal(trade = null, mode = 'edit') {
     $('#tradePlannedRisk').value = trade.plannedRisk || '';
     $('#tradePlannedStop').value = trade.plannedStop || '';
     $('#tradeMbiScore').value = trade.mbiScore ?? '';
+    $('#tradeDipBeforeMove').value = trade.dipBeforeMove ?? '';
     $('#tradeTags').value = stringifyTags(trade.tags || []);
     $('#tradeNotes').value = trade.notes || '';
     refs.fillsContainer.innerHTML = '';
@@ -856,6 +1002,7 @@ function readTradeForm() {
     strategy: $('#tradeStrategy').value,
     plannedRisk: $('#tradePlannedRisk').value,
     plannedStop: $('#tradePlannedStop').value,
+    dipBeforeMove: $('#tradeDipBeforeMove').value,
     mbiScore: $('#tradeMbiScore').value,
     tags: parseTags($('#tradeTags').value),
     notes: $('#tradeNotes').value,
@@ -880,6 +1027,7 @@ function syncTradePreview() {
       makeMetricPreviewCard('Avg exit', metrics.avgExitPrice ? formatCurrency(metrics.avgExitPrice, getCurrency()) : '—'),
       makeMetricPreviewCard('Open qty', String(metrics.openQty)),
       makeMetricPreviewCard('Move %', metrics.realizedPct != null ? formatPercent(metrics.realizedPct, 2) : '—', metrics.realizedPct >= 0 ? 'positive' : 'negative'),
+      makeMetricPreviewCard('Dip before move', trade.dipBeforeMove != null ? formatPercent(trade.dipBeforeMove, 2) : '—'),
       makeMetricPreviewCard('Net P&L', formatCurrency(metrics.realizedNetPnl, getCurrency()), metrics.realizedNetPnl >= 0 ? 'positive' : 'negative'),
       makeMetricPreviewCard('R multiple', metrics.realizedR != null ? round(metrics.realizedR, 2).toFixed(2) : '—'),
     ].join('');
@@ -919,6 +1067,7 @@ function mergeImportedTradeWithExisting(importedTrade) {
     plannedRisk: existing.plannedRisk || importedTrade.plannedRisk,
     plannedStop: existing.plannedStop || importedTrade.plannedStop,
     timeframe: existing.timeframe || importedTrade.timeframe || TRADE_TIMEFRAMES.AUTO,
+    dipBeforeMove: existing.dipBeforeMove ?? importedTrade.dipBeforeMove,
     mbiScore: existing.mbiScore ?? importedTrade.mbiScore,
     tags: [...new Set([...(importedTrade.tags || []), ...(existing.tags || [])])],
     notes: existing.notes || importedTrade.notes,
@@ -1028,6 +1177,157 @@ function handleJournalClick(event) {
   if (action === 'delete') handleDeleteTrade(tradeId);
 }
 
+const WINNER_MOVE_BASES = 4;
+const WINNER_MOVE_EXPANSIONS = 3;
+
+function emptyWinnerMoveForm() {
+  return {
+    id: uid('move'),
+    movePct: '',
+    breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, () => ''),
+    bases: Array.from({ length: WINNER_MOVE_BASES }, () => ({
+      length: '',
+      depth: '',
+      expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, () => ''),
+    })),
+  };
+}
+
+function cloneWinnerMoveForForm(move = {}) {
+  return {
+    id: move.id || uid('move'),
+    movePct: move.movePct ?? move.move ?? move.totalMovePct ?? '',
+    breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, index) => move.breakoutExpansions?.[index] ?? ''),
+    bases: Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({
+      length: move.bases?.[baseIndex]?.length ?? '',
+      depth: move.bases?.[baseIndex]?.depth ?? '',
+      expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, expansionIndex) => move.bases?.[baseIndex]?.expansions?.[expansionIndex] ?? ''),
+    })),
+  };
+}
+
+function readWinnerMoveCard(card) {
+  if (!card) return emptyWinnerMoveForm();
+  const move = emptyWinnerMoveForm();
+  move.id = card.dataset.moveId || uid('move');
+  move.movePct = card.querySelector('[data-move-field="movePct"]')?.value ?? '';
+  move.breakoutExpansions = Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, index) => (
+    card.querySelector(`[data-breakout-expansion-index="${index}"]`)?.value ?? ''
+  ));
+  move.bases = Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({
+    length: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="length"]`)?.value ?? '',
+    depth: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="depth"]`)?.value ?? '',
+    expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, expansionIndex) => (
+      card.querySelector(`[data-base-index="${baseIndex}"][data-base-expansion-index="${expansionIndex}"]`)?.value ?? ''
+    )),
+  }));
+  return move;
+}
+
+function readWinnerMovesBuilderRaw() {
+  if (!refs.winnerMovesBuilder) return [];
+  return [...refs.winnerMovesBuilder.querySelectorAll('[data-move-card]')].map(readWinnerMoveCard);
+}
+
+function readWinnerMovesBuilder() {
+  return normalizeWinnerMoves(readWinnerMovesBuilderRaw());
+}
+
+function winnerMoveSummaryText(summary = {}) {
+  if (!summary.moveCount) return 'Move is empty. Add any expansion, base, or total move if you want this pattern included in analysis.';
+  const parts = [];
+  if (summary.totalMovePctAuto != null) parts.push(`Auto move ${formatPercent(summary.totalMovePctAuto, 1)}`);
+  if (summary.totalBases) parts.push(`${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`);
+  if (summary.avgExpansion != null) parts.push(`Avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
+  if (summary.maxExpansion != null) parts.push(`Best expansion ${formatPercent(summary.maxExpansion, 1)}`);
+  if (summary.maxBaseLength != null) parts.push(`Biggest base ${summary.maxBaseLength} bars`);
+  if (summary.maxBaseDepth != null) parts.push(`Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`);
+  return parts.join(' • ');
+}
+
+function winnerMoveCardHtml(rawMove, moveIndex) {
+  const move = cloneWinnerMoveForForm(rawMove);
+  const summary = summarizeWinnerPattern([move]);
+  return `
+    <div class="panel compact-top" data-move-card data-move-id="${escapeHtml(move.id)}">
+      <div class="section-row">
+        <div>
+          <div class="panel-title">Move ${moveIndex + 1}</div>
+          <div class="small-copy">Use E1B / E2B / E3B for the initial burst, then B1-B4 for each base with its post-base expansions.</div>
+        </div>
+        <button type="button" class="btn btn-ghost" data-move-builder-action="remove" data-move-id="${escapeHtml(move.id)}">Remove</button>
+      </div>
+      <div class="form-grid form-grid-4 compact-top">
+        <label class="field"><span>Move ${moveIndex + 1} total %</span><input data-move-field="movePct" type="number" step="0.1" placeholder="Auto if blank" value="${escapeHtml(String(move.movePct ?? ''))}" /></label>
+        <label class="field"><span>E1B %</span><input data-breakout-expansion-index="0" type="number" step="0.1" placeholder="6" value="${escapeHtml(String(move.breakoutExpansions[0] ?? ''))}" /></label>
+        <label class="field"><span>E2B %</span><input data-breakout-expansion-index="1" type="number" step="0.1" placeholder="5" value="${escapeHtml(String(move.breakoutExpansions[1] ?? ''))}" /></label>
+        <label class="field"><span>E3B %</span><input data-breakout-expansion-index="2" type="number" step="0.1" placeholder="4" value="${escapeHtml(String(move.breakoutExpansions[2] ?? ''))}" /></label>
+      </div>
+      ${move.bases.map((base, baseIndex) => `
+        <div class="form-grid form-grid-3 compact-top">
+          <label class="field"><span>B${baseIndex + 1} length</span><input data-base-index="${baseIndex}" data-base-field="length" type="number" step="0.1" placeholder="18" value="${escapeHtml(String(base.length ?? ''))}" /></label>
+          <label class="field"><span>B${baseIndex + 1} depth %</span><input data-base-index="${baseIndex}" data-base-field="depth" type="number" step="0.1" placeholder="12" value="${escapeHtml(String(base.depth ?? ''))}" /></label>
+          <label class="field"><span>E1B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="0" type="number" step="0.1" placeholder="7" value="${escapeHtml(String(base.expansions[0] ?? ''))}" /></label>
+          <label class="field"><span>E2B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="1" type="number" step="0.1" placeholder="5" value="${escapeHtml(String(base.expansions[1] ?? ''))}" /></label>
+          <label class="field"><span>E3B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="2" type="number" step="0.1" placeholder="4" value="${escapeHtml(String(base.expansions[2] ?? ''))}" /></label>
+        </div>
+      `).join('')}
+      <div class="panel-note compact-top">${escapeHtml(winnerMoveSummaryText(summary))}</div>
+    </div>
+  `;
+}
+
+function renderWinnerMovesSummary() {
+  if (!refs.winnerMovesSummary) return;
+  const summary = summarizeWinnerPattern(readWinnerMovesBuilderRaw());
+  if (!summary.moveCount) {
+    refs.winnerMovesSummary.innerHTML = 'No move pattern data yet. Add Move 1, Move 2, and any B1-B4 / E1B1 style numbers you want to study. All fields are optional.';
+    return;
+  }
+  const parts = [
+    `${summary.moveCount} move${summary.moveCount === 1 ? '' : 's'}`,
+    `${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`,
+  ];
+  if (summary.avgExpansion != null) parts.push(`Avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
+  if (summary.maxExpansion != null) parts.push(`Best expansion ${formatPercent(summary.maxExpansion, 1)}`);
+  if (summary.maxBaseLength != null) parts.push(`Biggest base ${summary.maxBaseLength} bars`);
+  if (summary.maxBaseDepth != null) parts.push(`Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`);
+  if (summary.totalMovePctAuto != null) parts.push(`Auto total move ${formatPercent(summary.totalMovePctAuto, 1)}`);
+  refs.winnerMovesSummary.innerHTML = `<div class="text-strong">Pattern builder auto-summary</div><div>${escapeHtml(parts.join(' • '))}</div>`;
+}
+
+function renderWinnerMovesBuilder(moves = []) {
+  if (!refs.winnerMovesBuilder) return;
+  const items = (Array.isArray(moves) ? moves : []).map(cloneWinnerMoveForForm);
+  refs.winnerMovesBuilder.innerHTML = items.length
+    ? items.map((move, index) => winnerMoveCardHtml(move, index)).join('')
+    : '<div class="panel-note compact-top">No move legs added yet. Use <strong>Add move</strong> to capture Move 1, Move 2, and their bases/expansions. Every field is optional.</div>';
+  renderWinnerMovesSummary();
+}
+
+function handleWinnerMovesBuilderClick(event) {
+  const button = event.target.closest('[data-move-builder-action]');
+  if (!button) return;
+  if (button.dataset.moveBuilderAction === 'remove') {
+    const moveId = button.dataset.moveId;
+    const items = readWinnerMovesBuilderRaw().filter((move) => move.id !== moveId);
+    renderWinnerMovesBuilder(items);
+  }
+}
+
+function createWinnerPatternLine(entry = {}) {
+  if (!(entry.pattern?.moveCount > 0)) return '';
+  const parts = [];
+  parts.push(`${entry.pattern.moveCount} move${entry.pattern.moveCount === 1 ? '' : 's'}`);
+  if (entry.pattern.totalBases) parts.push(`${entry.pattern.totalBases} bases`);
+  if (entry.pattern.avgExpansion != null) parts.push(`avg expansion ${formatPercent(entry.pattern.avgExpansion, 1)}`);
+  if (entry.pattern.maxExpansion != null) parts.push(`best expansion ${formatPercent(entry.pattern.maxExpansion, 1)}`);
+  if (entry.pattern.maxBaseLength != null) parts.push(`biggest base ${entry.pattern.maxBaseLength} bars`);
+  if (entry.pattern.maxBaseDepth != null) parts.push(`deepest base ${formatPercent(entry.pattern.maxBaseDepth, 1)}`);
+  if (entry.effectiveMove != null) parts.push(`auto move ${formatPercent(entry.effectiveMove, 1)}`);
+  return parts.join(' • ');
+}
+
 function clearWinnerForm() {
   refs.winnerForm.reset();
   $('#winnerId').value = '';
@@ -1037,6 +1337,7 @@ function clearWinnerForm() {
   refs.winnerModalTitle.textContent = 'New winner';
   clearWinnerImageDraft();
   refs.winnerImagePreview.innerHTML = winnerImageEmptyState();
+  renderWinnerMovesBuilder([]);
 }
 
 function syncWinnerImagePreview() {
@@ -1060,6 +1361,16 @@ function syncWinnerImagePreview() {
 
   if (!url) {
     refs.winnerImagePreview.innerHTML = winnerImageEmptyState();
+    return;
+  }
+
+  if (!looksLikeViewableImageUrl(url)) {
+    refs.winnerImagePreview.innerHTML = `
+      <div class="preview-meta small-copy">
+        <div class="text-strong">Saved image reference</div>
+        <div>The value will be saved, but it is not a direct browser-viewable image URL.</div>
+      </div>
+    `;
     return;
   }
 
@@ -1114,20 +1425,24 @@ function openWinnerModal(entry = null) {
     $('#winnerSetup').value = entry.setup || '';
     $('#winnerTimeframe').value = entry.timeframe || 'SWING';
     $('#winnerBreakoutDate').value = entry.breakoutDate || '';
-    $('#winnerCircuits').value = entry.circuits || '';
+    $('#winnerCircuits').value = entry.circuits ?? '';
     $('#winnerPeriod').value = entry.period || '';
     $('#winnerMbiScore').value = entry.mbiScore ?? '';
-    $('#winnerInitialMove').value = entry.initialMove || '';
-    $('#winnerBaseLength').value = entry.baseLength || '';
-    $('#winnerMove').value = entry.move || '';
-    $('#winnerStage4Decline').value = entry.stage4Decline || '';
+    $('#winnerInitialMove').value = entry.initialMove ?? '';
+    $('#winnerBaseLength').value = entry.baseLength ?? '';
+    $('#winnerMove').value = entry.move ?? '';
+    $('#winnerDipBeforeMove').value = entry.dipBeforeMove ?? '';
+    $('#winnerStage4Decline').value = entry.stage4Decline ?? '';
     $('#winnerImageUrl').value = entry.imageUrl || '';
     $('#winnerImageStoragePath').value = entry.imageStoragePath || '';
     $('#winnerTags').value = stringifyTags(entry.tags || []);
     $('#winnerNotes').value = entry.notes || '';
     refs.winnerModalTitle.textContent = `Edit ${entry.stockName || 'winner'}`;
     refs.deleteWinnerBtn.classList.remove('hidden');
+    renderWinnerMovesBuilder(entry.moves || []);
     syncWinnerImagePreview();
+  } else {
+    renderWinnerMovesBuilder([]);
   }
   refs.winnerModal.classList.remove('hidden');
   refs.winnerModal.setAttribute('aria-hidden', 'false');
@@ -1140,6 +1455,7 @@ function closeWinnerModal() {
 }
 
 function readWinnerForm() {
+  const existing = state.winners.find((item) => item.id === ($('#winnerId').value || ''));
   return normalizeWinnerPayload({
     id: $('#winnerId').value || uid('winner'),
     stockName: $('#winnerStockName').value,
@@ -1154,16 +1470,18 @@ function readWinnerForm() {
     initialMove: $('#winnerInitialMove').value,
     baseLength: $('#winnerBaseLength').value,
     move: $('#winnerMove').value,
+    dipBeforeMove: $('#winnerDipBeforeMove').value,
     stage4Decline: $('#winnerStage4Decline').value,
     imageUrl: $('#winnerImageUrl').value,
     imageStoragePath: $('#winnerImageStoragePath').value,
-    imageBytes: state.winners.find((item) => item.id === ($('#winnerId').value || ''))?.imageBytes ?? null,
-    imageContentType: state.winners.find((item) => item.id === ($('#winnerId').value || ''))?.imageContentType || '',
-    imageWidth: state.winners.find((item) => item.id === ($('#winnerId').value || ''))?.imageWidth ?? null,
-    imageHeight: state.winners.find((item) => item.id === ($('#winnerId').value || ''))?.imageHeight ?? null,
+    imageBytes: existing?.imageBytes ?? null,
+    imageContentType: existing?.imageContentType || '',
+    imageWidth: existing?.imageWidth ?? null,
+    imageHeight: existing?.imageHeight ?? null,
     tags: parseTags($('#winnerTags').value),
     notes: $('#winnerNotes').value,
-    createdAt: state.winners.find((item) => item.id === $('#winnerId').value)?.createdAt || new Date().toISOString(),
+    moves: readWinnerMovesBuilder(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
 }
@@ -1171,7 +1489,7 @@ function readWinnerForm() {
 async function handleDeleteWinner(entryId) {
   const entry = state.winners.find((item) => item.id === entryId);
   if (!entry) return;
-  const confirmed = window.confirm(`Delete winner record ${entry.stockName}?`);
+  const confirmed = window.confirm(`Delete winner record ${entry.stockName || 'this entry'}?`);
   if (!confirmed) return;
   try {
     if (entry.imageStoragePath) {
@@ -1655,6 +1973,13 @@ function bindToolbarEvents() {
   refs.pickWinnerImageBtn?.addEventListener('click', () => refs.winnerImageFile?.click());
   refs.clearWinnerImageBtn?.addEventListener('click', clearWinnerImageSelection);
   refs.winnerImageFile?.addEventListener('change', handleWinnerImageFileChange);
+  refs.addWinnerMoveBtn?.addEventListener('click', () => {
+    const moves = readWinnerMovesBuilderRaw();
+    moves.push(emptyWinnerMoveForm());
+    renderWinnerMovesBuilder(moves);
+  });
+  refs.winnerMovesBuilder?.addEventListener('click', handleWinnerMovesBuilderClick);
+  refs.winnerMovesBuilder?.addEventListener('input', renderWinnerMovesSummary);
 
   $('#addBuyFillBtn').addEventListener('click', () => createFillRow({ side: 'BUY' }));
   $('#addSellFillBtn').addEventListener('click', () => createFillRow({ side: 'SELL' }));
@@ -1692,11 +2017,11 @@ function bindToolbarEvents() {
     let pathToDelete = '';
     try {
       const entry = readWinnerForm();
-      if (!entry.stockName) throw new Error('Stock name is required.');
       const existing = state.winners.find((item) => item.id === entry.id);
       const existingPath = existing?.imageStoragePath || '';
       const existingUrl = existing?.imageUrl || '';
       const pendingImage = state.ui.winnerImageDraft?.prepared;
+      if (!hasWinnerContent(entry, pendingImage)) throw new Error('Add at least one winner detail before saving.');
 
       if (pendingImage) {
         if (!canUploadWinnerImages()) {
@@ -1836,6 +2161,7 @@ function bindToolbarEvents() {
   bindFilter('#minMbiFilter', 'minMbi');
   bindFilter('#lossThresholdFilter', 'lossWorseThan');
   bindFilter('#moveThresholdFilter', 'minAbsMove');
+  bindFilter('#dipBeforeMoveFilter', 'maxDipBeforeMove');
 
   $('#periodPresetFilter').addEventListener('change', (event) => {
     state.filters.periodPreset = event.target.value;
@@ -1885,8 +2211,15 @@ function bindToolbarEvents() {
   bindWinnerFilter('#winnerPeriodFilter', 'period');
   bindWinnerFilter('#winnerMinMoveFilter', 'minMove');
   bindWinnerFilter('#winnerMinInitialMoveFilter', 'minInitialMove');
+  bindWinnerFilter('#winnerMaxDipFilter', 'maxDipBeforeMove');
   bindWinnerFilter('#winnerMaxStage4Filter', 'maxStage4Decline');
   bindWinnerFilter('#winnerMinMbiFilter', 'minMbi');
+  bindWinnerFilter('#winnerMinMoveCountFilter', 'minMoveCount');
+  bindWinnerFilter('#winnerMinBaseCountFilter', 'minBaseCount');
+  bindWinnerFilter('#winnerMinAvgExpansionFilter', 'minAvgExpansion');
+  bindWinnerFilter('#winnerMinMaxExpansionFilter', 'minMaxExpansion');
+  bindWinnerFilter('#winnerMinBiggestBaseFilter', 'minBiggestBaseLength');
+  bindWinnerFilter('#winnerMaxDeepestBaseFilter', 'maxDeepestBase');
   bindWinnerFilter('#winnerHasImageFilter', 'hasImage');
   bindWinnerFilter('#winnerSortSelect', 'sort');
 

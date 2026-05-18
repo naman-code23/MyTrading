@@ -67,6 +67,31 @@ function compareNullableNumbers(a, b, direction = 'DESC') {
   return direction === 'ASC' ? left - right : right - left;
 }
 
+
+function toNullableNumber(value) {
+  if (value === '' || value == null) return null;
+  const parsed = Number(String(value).replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function averageNullableNumbers(values = []) {
+  const items = values.map((value) => toNullableNumber(value)).filter((value) => value != null);
+  if (!items.length) return null;
+  return round(items.reduce((sum, value) => sum + value, 0) / items.length, 2);
+}
+
+function percentileNullableNumbers(values = [], percentile = 0.8) {
+  const items = values.map((value) => toNullableNumber(value)).filter((value) => value != null).sort((a, b) => a - b);
+  if (!items.length) return null;
+  const clamped = Math.max(0, Math.min(1, Number(percentile || 0)));
+  const rank = (items.length - 1) * clamped;
+  const lower = Math.floor(rank);
+  const upper = Math.ceil(rank);
+  if (lower === upper) return round(items[lower], 2);
+  const weight = rank - lower;
+  return round(items[lower] + (items[upper] - items[lower]) * weight, 2);
+}
+
 function tradeSortStamp(trade) {
   const effectiveDate = trade.metrics?.status === 'CLOSED'
     ? (trade.metrics.exitAt || trade.metrics.entryAt || trade.createdAt)
@@ -371,6 +396,15 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     ? losses.reduce((sum, trade) => sum + Number(trade.metrics.holdMinutes || 0), 0) / losses.length
     : 0;
 
+  const dipValues = closed.map((trade) => trade.dipBeforeMove).filter((value) => toNullableNumber(value) != null);
+  const dipWinValues = wins.map((trade) => trade.dipBeforeMove).filter((value) => toNullableNumber(value) != null);
+  const dipLossValues = losses.map((trade) => trade.dipBeforeMove).filter((value) => toNullableNumber(value) != null);
+  const avgDipBeforeMove = averageNullableNumbers(dipValues);
+  const avgWinDipBeforeMove = averageNullableNumbers(dipWinValues);
+  const avgLossDipBeforeMove = averageNullableNumbers(dipLossValues);
+  const winnerDipP80 = percentileNullableNumbers(dipWinValues, 0.8);
+  const lossDipP80 = percentileNullableNumbers(dipLossValues, 0.8);
+
   let cumulative = 0;
   let peak = 0;
   let maxDrawdown = 0;
@@ -432,6 +466,14 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     avgTrade: closed.length ? netPnl / closed.length : 0,
     avgWinHoldMinutes,
     avgLossHoldMinutes,
+    dipSampleCount: dipValues.length,
+    dipWinSampleCount: dipWinValues.length,
+    dipLossSampleCount: dipLossValues.length,
+    avgDipBeforeMove,
+    avgWinDipBeforeMove,
+    avgLossDipBeforeMove,
+    winnerDipP80,
+    lossDipP80,
     profitFactor: grossLossAbs > 0 ? grossProfit / grossLossAbs : undefined,
     expectancy: closed.length ? netPnl / closed.length : 0,
     maxDrawdown,
@@ -524,6 +566,7 @@ export function normalizeTradePayload(payload) {
     notes: String(payload.notes || '').trim(),
     plannedRisk: Number(payload.plannedRisk || 0),
     plannedStop: Number(payload.plannedStop || 0),
+    dipBeforeMove: toNullableNumber(payload.dipBeforeMove),
     mbiScore: payload.mbiScore === '' || payload.mbiScore == null ? null : Number(payload.mbiScore),
     fills: sortFills(
       (payload.fills || []).map((fill) => ({
@@ -542,6 +585,7 @@ export function filterTrades(trades, filters, method = PNL_METHODS.AVERAGE) {
   const minMbi = Number(filters.minMbi || 0);
   const lossWorseThan = Number(filters.lossWorseThan || 0);
   const minAbsMove = Number(filters.minAbsMove || 0);
+  const maxDipBeforeMove = Number(filters.maxDipBeforeMove || 0);
 
   return items.filter((trade) => {
     const text = (filters.search || '').trim().toLowerCase();
@@ -582,6 +626,9 @@ export function filterTrades(trades, filters, method = PNL_METHODS.AVERAGE) {
     if (minAbsMove > 0) {
       if (!(trade.metrics.absMovePct != null && trade.metrics.absMovePct >= Math.abs(minAbsMove))) return false;
     }
+    if (maxDipBeforeMove > 0) {
+      if (!(toNullableNumber(trade.dipBeforeMove) != null && Number(trade.dipBeforeMove) <= Math.abs(maxDipBeforeMove))) return false;
+    }
 
     return true;
   });
@@ -612,6 +659,10 @@ export function sortTrades(tradesWithMetrics, sortKey) {
         return compareNullableNumbers(a.metrics.realizedPct, b.metrics.realizedPct, 'ASC');
       case 'MOVE_DESC':
         return compareNullableNumbers(a.metrics.absMovePct, b.metrics.absMovePct, 'DESC');
+      case 'DIP_ASC':
+        return compareNullableNumbers(a.dipBeforeMove, b.dipBeforeMove, 'ASC');
+      case 'DIP_DESC':
+        return compareNullableNumbers(a.dipBeforeMove, b.dipBeforeMove, 'DESC');
       case 'MBI_DESC':
         return compareNullableNumbers(a.mbiScore, b.mbiScore, 'DESC');
       case 'DATE_DESC':
@@ -639,6 +690,7 @@ export function toCsvRows(trades, method = PNL_METHODS.AVERAGE) {
     'Avg Entry',
     'Avg Exit',
     'Move %',
+    'Dip Before Move %',
     'Open Qty',
     'Net PnL',
     'R Multiple',
@@ -659,6 +711,7 @@ export function toCsvRows(trades, method = PNL_METHODS.AVERAGE) {
     trade.metrics.avgEntryPrice ?? '',
     trade.metrics.avgExitPrice ?? '',
     trade.metrics.realizedPct ?? '',
+    trade.dipBeforeMove ?? '',
     trade.metrics.openQty,
     round(trade.metrics.realizedNetPnl),
     trade.metrics.realizedR != null ? round(trade.metrics.realizedR, 2) : '',

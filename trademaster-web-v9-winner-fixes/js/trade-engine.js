@@ -97,6 +97,98 @@ function calculateReturnPct(direction, avgEntryPrice, avgExitPrice) {
   return round(move, 2);
 }
 
+function estimateConfiguredRiskAmount(trade = {}, metrics = {}) {
+  const plannedRisk = Number(trade.plannedRisk || 0);
+  if (plannedRisk > 0) return round(plannedRisk);
+
+  const plannedStop = Number(trade.plannedStop || 0);
+  const entryPrice = Number(metrics.avgEntryPrice || metrics.avgOpenPrice || 0);
+  const entryQty = Number(metrics.totalEntryQty || metrics.openQty || 0);
+  if (!(plannedStop > 0) || !(entryPrice > 0) || !(entryQty > 0)) return 0;
+
+  const perUnitRisk = (trade.direction || 'LONG') === 'SHORT'
+    ? plannedStop - entryPrice
+    : entryPrice - plannedStop;
+  if (!(perUnitRisk > 0)) return 0;
+  return round(perUnitRisk * entryQty);
+}
+
+function estimateCurrentOpenRiskAmount(trade = {}, metrics = {}) {
+  if ((metrics.status || 'OPEN') !== 'OPEN') return 0;
+
+  const plannedRisk = Number(trade.plannedRisk || 0);
+  const openQty = Number(metrics.openQty || 0);
+  const totalEntryQty = Number(metrics.totalEntryQty || 0);
+  if (plannedRisk > 0) {
+    if (openQty > 0 && totalEntryQty > 0 && openQty < totalEntryQty) {
+      return round(plannedRisk * (openQty / totalEntryQty));
+    }
+    return round(plannedRisk);
+  }
+
+  const plannedStop = Number(trade.plannedStop || 0);
+  const openPrice = Number(metrics.avgOpenPrice || metrics.avgEntryPrice || 0);
+  if (!(plannedStop > 0) || !(openPrice > 0) || !(openQty > 0)) return 0;
+
+  const perUnitRisk = (trade.direction || 'LONG') === 'SHORT'
+    ? plannedStop - openPrice
+    : openPrice - plannedStop;
+  if (!(perUnitRisk > 0)) return 0;
+  return round(perUnitRisk * openQty);
+}
+
+function buildOpenRiskProfile(items = [], referenceTime = Date.now()) {
+  const events = [];
+  let currentOpenRisk = 0;
+  let trackedRiskTradeCount = 0;
+  let trackedOpenRiskTradeCount = 0;
+
+  for (const trade of items) {
+    const metrics = trade.metrics || {};
+    const configuredRisk = estimateConfiguredRiskAmount(trade, metrics);
+    const startStamp = new Date(metrics.entryAt || trade.createdAt || '').getTime();
+    const endSource = metrics.status === 'CLOSED'
+      ? (metrics.exitAt || trade.updatedAt || trade.createdAt)
+      : referenceTime;
+    const endStamp = typeof endSource === 'number' ? endSource : new Date(endSource || '').getTime();
+
+    if (configuredRisk > 0 && Number.isFinite(startStamp) && Number.isFinite(endStamp) && endStamp >= startStamp) {
+      trackedRiskTradeCount += 1;
+      events.push({ time: startStamp, delta: configuredRisk });
+      events.push({ time: endStamp, delta: -configuredRisk });
+    }
+
+    if (metrics.status === 'OPEN') {
+      const openRisk = estimateCurrentOpenRiskAmount(trade, metrics);
+      if (openRisk > 0) {
+        trackedOpenRiskTradeCount += 1;
+        currentOpenRisk += openRisk;
+      }
+    }
+  }
+
+  events.sort((a, b) => a.time - b.time || a.delta - b.delta);
+
+  let running = 0;
+  let peak = 0;
+  const series = [];
+  for (const event of events) {
+    running += event.delta;
+    peak = Math.max(peak, running);
+    const existing = series[series.length - 1];
+    if (existing && existing.time === event.time) existing.value = round(running);
+    else series.push({ time: event.time, value: round(running) });
+  }
+
+  return {
+    currentOpenRisk: round(currentOpenRisk),
+    peakOpenRisk: round(peak),
+    trackedRiskTradeCount,
+    trackedOpenRiskTradeCount,
+    series,
+  };
+}
+
 export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
   const fills = sortFills(trade.fills || []);
   if (!fills.length) {
@@ -270,7 +362,14 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
   const grossLossAbs = losses.reduce((sum, trade) => sum + Math.abs(trade.metrics.realizedNetPnl), 0);
   const netPnl = closed.reduce((sum, trade) => sum + trade.metrics.realizedNetPnl, 0);
   const avgWin = wins.length ? grossProfit / wins.length : 0;
-  const avgLoss = losses.length ? -grossLossAbs / losses.length : 0;
+  const avgLossAbs = losses.length ? grossLossAbs / losses.length : 0;
+  const avgLoss = losses.length ? -avgLossAbs : 0;
+  const avgWinHoldMinutes = wins.length
+    ? wins.reduce((sum, trade) => sum + Number(trade.metrics.holdMinutes || 0), 0) / wins.length
+    : 0;
+  const avgLossHoldMinutes = losses.length
+    ? losses.reduce((sum, trade) => sum + Number(trade.metrics.holdMinutes || 0), 0) / losses.length
+    : 0;
 
   let cumulative = 0;
   let peak = 0;
@@ -313,6 +412,8 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     return worst;
   }, null);
 
+  const riskProfile = buildOpenRiskProfile(items);
+
   return {
     tradeCount: items.length,
     openTradeCount: open.length,
@@ -320,12 +421,17 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     winCount: wins.length,
     lossCount: losses.length,
     winRate: closed.length ? (wins.length / closed.length) * 100 : 0,
+    lossRate: closed.length ? (losses.length / closed.length) * 100 : 0,
     grossProfit,
     grossLoss: -grossLossAbs,
+    grossLossAbs,
     netPnl,
     avgWin,
     avgLoss,
+    avgLossAbs,
     avgTrade: closed.length ? netPnl / closed.length : 0,
+    avgWinHoldMinutes,
+    avgLossHoldMinutes,
     profitFactor: grossLossAbs > 0 ? grossProfit / grossLossAbs : undefined,
     expectancy: closed.length ? netPnl / closed.length : 0,
     maxDrawdown,
@@ -333,6 +439,11 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     bestLossStreak,
     bestTrade,
     worstTrade,
+    currentOpenRisk: riskProfile.currentOpenRisk,
+    peakOpenRisk: riskProfile.peakOpenRisk,
+    trackedRiskTradeCount: riskProfile.trackedRiskTradeCount,
+    trackedOpenRiskTradeCount: riskProfile.trackedOpenRiskTradeCount,
+    openRiskSeries: riskProfile.series,
     items,
   };
 }

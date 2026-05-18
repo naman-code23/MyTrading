@@ -113,6 +113,8 @@ function initRefs() {
   refs.recentTrades = $('#recentTrades');
   refs.journalTable = $('#journalTable');
   refs.journalFilterSummary = $('#journalFilterSummary');
+  refs.journalStatsCards = $('#journalStatsCards');
+  refs.journalStatsNote = $('#journalStatsNote');
   refs.tradeModal = $('#tradeModal');
   refs.tradeForm = $('#tradeForm');
   refs.tradeModalTitle = $('#tradeModalTitle');
@@ -357,6 +359,40 @@ function renderTradeFilterSummary() {
   if (refs.dashboardFilterSummary) refs.dashboardFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">Dashboard scope: ${summaryText}</div></div>${pills}`;
 }
 
+function renderJournalStats() {
+  if (!refs.journalStatsCards) return;
+  if (!requireCloudAuth()) {
+    refs.journalStatsCards.innerHTML = '<div class="empty-state">Sign in to see scoped journal stats.</div>';
+    if (refs.journalStatsNote) refs.journalStatsNote.textContent = 'Journal stats respect the active period and filter scope.';
+    return;
+  }
+
+  const scopedTrades = getFilteredTradesRaw();
+  const summary = summarizeJournal(scopedTrades, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const noClosedTrades = Number(summary.closedTradeCount || 0) === 0;
+  const cards = [
+    makeMetricPreviewCard('Win %', noClosedTrades ? '—' : formatPercent(summary.winRate, 1), summary.winRate >= 50 ? 'positive' : ''),
+    makeMetricPreviewCard('Loss %', noClosedTrades ? '—' : formatPercent(summary.lossRate, 1), summary.lossRate > 50 ? 'negative' : ''),
+    makeMetricPreviewCard('Win size', Number(summary.winCount || 0) ? formatCurrency(summary.grossProfit, getCurrency()) : '—', 'positive'),
+    makeMetricPreviewCard('Loss size', Number(summary.lossCount || 0) ? formatCurrency(Math.abs(summary.grossLossAbs || 0), getCurrency()) : '—', 'negative'),
+    makeMetricPreviewCard('Avg win size', Number(summary.winCount || 0) ? formatCurrency(summary.avgWin, getCurrency()) : '—', 'positive'),
+    makeMetricPreviewCard('Avg loss size', Number(summary.lossCount || 0) ? formatCurrency(Math.abs(summary.avgLossAbs || 0), getCurrency()) : '—', 'negative'),
+    makeMetricPreviewCard('Avg win hold', Number(summary.winCount || 0) ? formatDurationMinutes(summary.avgWinHoldMinutes) : '—'),
+    makeMetricPreviewCard('Avg loss hold', Number(summary.lossCount || 0) ? formatDurationMinutes(summary.avgLossHoldMinutes) : '—', summary.avgLossHoldMinutes > summary.avgWinHoldMinutes ? 'negative' : ''),
+    makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
+    makeMetricPreviewCard('Peak open risk', summary.peakOpenRisk > 0 ? formatCurrency(summary.peakOpenRisk, getCurrency()) : '—', summary.peakOpenRisk > 0 ? 'warning' : ''),
+  ];
+  refs.journalStatsCards.innerHTML = cards.join('');
+
+  if (refs.journalStatsNote) {
+    if (summary.trackedRiskTradeCount > 0) {
+      refs.journalStatsNote.textContent = `Open risk uses Planned risk first, then planned stop distance when a stop exists. ${summary.trackedRiskTradeCount} trade(s) in this scope include enough risk data.`;
+    } else {
+      refs.journalStatsNote.textContent = 'Open risk cards need Planned risk or Planned stop on the trade to be measurable.';
+    }
+  }
+}
+
 function renderSummaryCards() {
   if (!requireCloudAuth()) {
     refs.summaryCards.innerHTML = '<div class="empty-state">Sign in to see dashboard stats.</div>';
@@ -387,8 +423,8 @@ function renderSummaryCards() {
 
   const items = getRenderableTrades();
   const closed = items.filter((trade) => trade.metrics.status === 'CLOSED');
-  const avgWinnerHold = closed.filter((trade) => trade.metrics.realizedNetPnl > 0).reduce((sum, trade, _, arr) => sum + trade.metrics.holdMinutes / (arr.length || 1), 0);
-  const avgLoserHold = closed.filter((trade) => trade.metrics.realizedNetPnl < 0).reduce((sum, trade, _, arr) => sum + trade.metrics.holdMinutes / (arr.length || 1), 0);
+  const avgWinnerHold = Number(summary.avgWinHoldMinutes || 0);
+  const avgLoserHold = Number(summary.avgLossHoldMinutes || 0);
   const bestTimeframe = groupPnlByField(scopedTrades, 'timeframe', state.settings.pnlMethod || PNL_METHODS.AVERAGE)[0];
   const symbolBuckets = groupPnlByField(scopedTrades, 'symbol', state.settings.pnlMethod || PNL_METHODS.AVERAGE);
   const bestSymbol = symbolBuckets[0];
@@ -403,6 +439,8 @@ function renderSummaryCards() {
       makeMetricPreviewCard('Weak symbol', worstSymbol ? `${worstSymbol.label}` : '—', worstSymbol?.value < 0 ? 'negative' : ''),
       makeMetricPreviewCard('Winner hold', avgWinnerHold ? formatDurationMinutes(avgWinnerHold) : '—'),
       makeMetricPreviewCard('Loser hold', avgLoserHold ? formatDurationMinutes(avgLoserHold) : '—', avgLoserHold > avgWinnerHold ? 'negative' : ''),
+      makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
+      makeMetricPreviewCard('Peak open risk', summary.peakOpenRisk > 0 ? formatCurrency(summary.peakOpenRisk, getCurrency()) : '—', summary.peakOpenRisk > 0 ? 'warning' : ''),
       makeMetricPreviewCard('Best SuperMBI', bestMbiBucket?.label || '—', bestMbiBucket?.pnl > 0 ? 'positive' : ''),
     ].join('');
   }
@@ -424,6 +462,10 @@ function renderSummaryCards() {
     }
     if (bestMbiBucket?.label) {
       insights.push(`${bestMbiBucket.label} SuperMBI conditions are producing the best filtered P&L. When the market gives that regime, you can size more aggressively.`);
+    }
+    if (summary.peakOpenRisk > 0) {
+      const nowLabel = summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '₹0';
+      insights.push(`Current open risk is ${nowLabel}, and the peak concurrent open risk in this filtered sample reached ${formatCurrency(summary.peakOpenRisk, getCurrency())}. Use that number as a ceiling when sizing new adds.`);
     }
     if (!insights.length) insights.push('This filter scope is relatively balanced. Keep tightening entries and exits to turn decent trades into size-worthy trades.');
     refs.dashboardInsights.innerHTML = insights.map((item) => `<div class="coach-item warning">${escapeHtml(item)}</div>`).join('');
@@ -765,6 +807,7 @@ function renderCharts() {
 function renderAll() {
   updateUserSummary();
   renderTradeFilterSummary();
+  renderJournalStats();
   renderStrategyFilter();
   renderWinnerFilterOptions();
   renderSummaryCards();

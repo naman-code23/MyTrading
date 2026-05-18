@@ -86,11 +86,17 @@ const state = {
     maxStage4Decline: '',
     minMbi: '',
     minMoveCount: '',
+    minExpansionCount: '',
     minBaseCount: '',
+    minMoveDays: '',
     minAvgExpansion: '',
     minMaxExpansion: '',
-    minBiggestBaseLength: '',
-    maxDeepestBase: '',
+    minAvgExpansionLength: '',
+    minMaxExpansionLength: '',
+    minMajorBaseLength: '',
+    maxMajorBaseDepth: '',
+    minExpansionBaseLength: '',
+    maxExpansionBaseDepth: '',
     hasImage: 'ALL',
     sort: 'DATE_DESC',
     fromDate: '',
@@ -157,6 +163,7 @@ function initRefs() {
   refs.mbiHistoryTable = $('#mbiHistoryTable');
   refs.winnerTable = $('#winnerTable');
   refs.winnerSummaryCards = $('#winnerSummaryCards');
+  refs.winnerPatternAnalysis = $('#winnerPatternAnalysis');
   refs.winnerFilterSummary = $('#winnerFilterSummary');
   refs.winnerSectorFilter = $('#winnerSectorFilter');
   refs.winnerTypeFilter = $('#winnerTypeFilter');
@@ -359,11 +366,17 @@ function activeWinnerFilterLabels() {
   if (state.winnerFilters.maxStage4Decline) labels.push(`Stage-4 ≤ ${state.winnerFilters.maxStage4Decline}%`);
   if (state.winnerFilters.minMbi) labels.push(`SuperMBI ≥ ${state.winnerFilters.minMbi}`);
   if (state.winnerFilters.minMoveCount) labels.push(`Moves ≥ ${state.winnerFilters.minMoveCount}`);
+  if (state.winnerFilters.minExpansionCount) labels.push(`Expansions ≥ ${state.winnerFilters.minExpansionCount}`);
   if (state.winnerFilters.minBaseCount) labels.push(`Bases ≥ ${state.winnerFilters.minBaseCount}`);
+  if (state.winnerFilters.minMoveDays) labels.push(`Cycle days ≥ ${state.winnerFilters.minMoveDays}`);
   if (state.winnerFilters.minAvgExpansion) labels.push(`Avg expansion ≥ ${state.winnerFilters.minAvgExpansion}%`);
   if (state.winnerFilters.minMaxExpansion) labels.push(`Best expansion ≥ ${state.winnerFilters.minMaxExpansion}%`);
-  if (state.winnerFilters.minBiggestBaseLength) labels.push(`Biggest base ≥ ${state.winnerFilters.minBiggestBaseLength} bars`);
-  if (state.winnerFilters.maxDeepestBase) labels.push(`Deepest base ≤ ${state.winnerFilters.maxDeepestBase}%`);
+  if (state.winnerFilters.minAvgExpansionLength) labels.push(`Avg expansion length ≥ ${state.winnerFilters.minAvgExpansionLength}`);
+  if (state.winnerFilters.minMaxExpansionLength) labels.push(`Best expansion length ≥ ${state.winnerFilters.minMaxExpansionLength}`);
+  if (state.winnerFilters.minMajorBaseLength) labels.push(`Major base ≥ ${state.winnerFilters.minMajorBaseLength}`);
+  if (state.winnerFilters.maxMajorBaseDepth) labels.push(`Major base depth ≤ ${state.winnerFilters.maxMajorBaseDepth}%`);
+  if (state.winnerFilters.minExpansionBaseLength) labels.push(`Expansion-base ≥ ${state.winnerFilters.minExpansionBaseLength}`);
+  if (state.winnerFilters.maxExpansionBaseDepth) labels.push(`Expansion-base depth ≤ ${state.winnerFilters.maxExpansionBaseDepth}%`);
   if (state.winnerFilters.hasImage && state.winnerFilters.hasImage !== 'ALL') labels.push(state.winnerFilters.hasImage === 'YES' ? 'Has image' : 'No image');
   if (state.winnerFilters.fromDate || state.winnerFilters.toDate) labels.push(`${state.winnerFilters.fromDate || '...'} → ${state.winnerFilters.toDate || '...'}`);
   return labels;
@@ -677,10 +690,151 @@ function renderWinnerFilterOptions() {
   refs.winnerPeriodFilter.value = state.winnerFilters.period;
 }
 
+
+function collectWinnerPatternTags(entry = {}) {
+  const nested = (entry.moves || []).flatMap((move) => [
+    ...(move.tags || []),
+    ...(move.preMoveBase?.tags || []),
+    ...(move.expansions || []).flatMap((expansion) => [
+      ...(expansion.tags || []),
+      ...(expansion.base?.tags || []),
+    ]),
+  ]);
+  return [...(entry.tags || []), ...nested].map((tag) => String(tag || '').trim()).filter(Boolean);
+}
+
+function rankWinnerGroups(entries = [], selector) {
+  const grouped = new Map();
+  entries.forEach((entry) => {
+    const key = String(selector(entry) || '').trim();
+    const move = entry.effectiveMove;
+    if (!key || move == null) return;
+    if (!grouped.has(key)) grouped.set(key, { key, count: 0, moveSum: 0, daySum: 0, dayCount: 0 });
+    const bucket = grouped.get(key);
+    bucket.count += 1;
+    bucket.moveSum += Number(move);
+    const days = entry.pattern?.totalMoveDaysAuto;
+    if (days != null) {
+      bucket.daySum += Number(days);
+      bucket.dayCount += 1;
+    }
+  });
+  return [...grouped.values()]
+    .map((bucket) => ({
+      key: bucket.key,
+      count: bucket.count,
+      avgMove: round(bucket.moveSum / bucket.count, 2),
+      avgDays: bucket.dayCount ? round(bucket.daySum / bucket.dayCount, 2) : null,
+    }))
+    .sort((a, b) => b.avgMove - a.avgMove || b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, 4);
+}
+
+function rankWinnerTags(entries = []) {
+  const counts = new Map();
+  entries.forEach((entry) => {
+    collectWinnerPatternTags(entry).forEach((tag) => {
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    });
+  });
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+    .slice(0, 8);
+}
+
+function bulletListHtml(items = [], emptyText = 'No strong pattern yet.') {
+  if (!items.length) return `<div class="panel-note compact-top">${escapeHtml(emptyText)}</div>`;
+  return `<ul class="deploy-list compact-top">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+}
+
+function buildWinnerPatternAnalysisHtml(entries = [], summary = {}) {
+  if (!entries.length) {
+    return '<div class="panel empty-state">No winner records match the current filters.</div>';
+  }
+
+  const strengths = [];
+  const cautions = [];
+  const actions = [];
+
+  if (summary.avgMove != null && summary.avgMoveDays != null) {
+    strengths.push(`Filtered winners average ${formatPercent(summary.avgMove, 1)} over ${summary.avgMoveDays.toFixed(1)} cycle-days.`);
+  } else if (summary.avgMove != null) {
+    strengths.push(`Filtered winners average ${formatPercent(summary.avgMove, 1)} total move.`);
+  }
+
+  if (summary.avgExpansion != null) {
+    const lengthPart = summary.avgExpansionLength != null ? ` over ${summary.avgExpansionLength.toFixed(1)} bars/days` : '';
+    strengths.push(`Expansion legs average ${formatPercent(summary.avgExpansion, 1)}${lengthPart}, while best legs average ${formatPercent(summary.avgMaxExpansion, 1)}.`);
+  }
+
+  if (summary.avgMajorBaseLength != null || summary.avgExpansionBaseLength != null) {
+    strengths.push(`Major bases average ${summary.avgMajorBaseLength != null ? `${summary.avgMajorBaseLength.toFixed(1)} bars` : '—'} and expansion bases average ${summary.avgExpansionBaseLength != null ? `${summary.avgExpansionBaseLength.toFixed(1)} bars` : '—'}.`);
+  }
+
+  if (summary.avgMoveToDip != null) {
+    if (summary.avgMoveToDip >= 4) {
+      strengths.push(`Move-to-dip ratio is ${summary.avgMoveToDip.toFixed(2)}x, so leaders usually pay several times the pain they inflict.`);
+    } else {
+      cautions.push(`Move-to-dip ratio is only ${summary.avgMoveToDip.toFixed(2)}x, so weak entry timing can compress reward quickly.`);
+    }
+  }
+
+  if (summary.majorBaseDepthP80 != null) {
+    actions.push(`Primary breakout base depth 80% is around ${formatPercent(summary.majorBaseDepthP80, 1)}. Stops tighter than this will cut many valid fresh breakouts.`);
+  }
+  if (summary.expansionBaseDepthP80 != null) {
+    actions.push(`Continuation base depth 80% is around ${formatPercent(summary.expansionBaseDepthP80, 1)}. Use this as a guide for add-on SL placement during expansions.`);
+  }
+  if (summary.expansionLengthP80 != null) {
+    actions.push(`Most expansion legs finish within about ${summary.expansionLengthP80.toFixed(1)} bars/days. If a leg stalls longer, tighten management faster.`);
+  }
+  if (summary.moveDaysP80 != null) {
+    actions.push(`Most complete cycles finish within about ${summary.moveDaysP80.toFixed(1)} cycle-days. Late-cycle drifts beyond that deserve reduced size and quicker exits.`);
+  }
+  if (summary.avgStage4Decline != null && summary.avgStage4Decline > 25) {
+    cautions.push(`Average stage-4 decline is ${formatPercent(summary.avgStage4Decline, 1)}. Your leaders can unravel violently once the cycle cracks.`);
+  }
+  if (summary.avgDeepestBase != null && summary.avgDeepestBase > 18) {
+    cautions.push(`Deepest bases average ${formatPercent(summary.avgDeepestBase, 1)}. Tight breakout stops will be punished unless you only trade the tightest names.`);
+  }
+
+  const topSetups = rankWinnerGroups(entries, (entry) => entry.setup || 'Unspecified');
+  const topSectors = rankWinnerGroups(entries, (entry) => entry.sector || 'Unspecified');
+  const topTags = rankWinnerTags(entries);
+
+  const leaders = [];
+  if (topSetups[0]) leaders.push(`Best setup bucket right now: ${topSetups[0].key} averaging ${formatPercent(topSetups[0].avgMove, 1)} across ${topSetups[0].count} records.`);
+  if (topSectors[0]) leaders.push(`Best sector bucket right now: ${topSectors[0].key} averaging ${formatPercent(topSectors[0].avgMove, 1)} across ${topSectors[0].count} records.`);
+  if (topTags.length) leaders.push(`Most common pattern tags: ${topTags.slice(0, 4).map((item) => `${item.tag} (${item.count})`).join(', ')}.`);
+
+  return `
+    <div class="analytics-grid compact-top">
+      <div class="panel">
+        <div class="panel-title">Pattern coach</div>
+        ${bulletListHtml(strengths, 'Add a few more complete winners with moves, expansions, and bases to generate stronger pattern insights.')}
+      </div>
+      <div class="panel">
+        <div class="panel-title">SL / management ideas</div>
+        ${bulletListHtml(actions, 'Add expansion-base lengths and depths to turn this into a stop-loss guide.')}
+      </div>
+      <div class="panel">
+        <div class="panel-title">Cautions</div>
+        ${bulletListHtml(cautions, 'No major weakness stands out in the current filtered sample.')}
+      </div>
+      <div class="panel">
+        <div class="panel-title">Leaders in this filter</div>
+        ${bulletListHtml(leaders, 'Add tags, setups, and sectors to highlight what your best bull cycles have in common.')}
+      </div>
+    </div>
+  `;
+}
+
 function renderWinnerSummary() {
   if (!requireCloudAuth()) {
     refs.winnerSummaryCards.innerHTML = '<div class="empty-state">Sign in to build the winner database.</div>';
     refs.winnerTable.innerHTML = '';
+    if (refs.winnerPatternAnalysis) refs.winnerPatternAnalysis.innerHTML = '';
     return;
   }
   const items = getRenderableWinners();
@@ -689,25 +843,33 @@ function renderWinnerSummary() {
   const pills = labels.length
     ? `<div class="filter-pill-row">${labels.map((label) => `<span class="pill pill-muted">${escapeHtml(label)}</span>`).join('')}</div>`
     : '<div class="filter-pill-row"><span class="pill pill-muted">No extra filters</span></div>';
-  refs.winnerFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summary.count} records • ${summary.uniqueStocks} stocks • ${summary.patternCoverageCount || 0} with move maps • ${summary.withImages} images • ${summary.dipSampleCount || 0} dip data</div></div>${pills}`;
+  refs.winnerFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summary.count} records • ${summary.uniqueStocks} stocks • ${summary.patternCoverageCount || 0} cycle maps • ${summary.majorBaseSampleCount || 0} major-base samples • ${summary.expansionBaseSampleCount || 0} expansion-base samples • ${summary.withImages} images</div></div>${pills}`;
   refs.winnerSummaryCards.innerHTML = [
     makeMetricPreviewCard('Records after filter', String(summary.count)),
     makeMetricPreviewCard('Stocks after filter', String(summary.uniqueStocks)),
-    makeMetricPreviewCard('Pattern maps', String(summary.patternCoverageCount || 0), summary.patternCoverageCount ? 'positive' : ''),
+    makeMetricPreviewCard('Cycle maps', String(summary.patternCoverageCount || 0), summary.patternCoverageCount ? 'positive' : ''),
     makeMetricPreviewCard('Avg total move %', summary.avgMove != null ? formatPercent(summary.avgMove, 1) : '—', summary.avgMove != null && summary.avgMove >= 20 ? 'positive' : ''),
+    makeMetricPreviewCard('Avg cycle days', summary.avgMoveDays != null ? summary.avgMoveDays.toFixed(1) : '—'),
     makeMetricPreviewCard('Avg initial move %', summary.avgInitialMove != null ? formatPercent(summary.avgInitialMove, 1) : '—'),
     makeMetricPreviewCard('Avg moves / stock', summary.avgMoveCount != null ? summary.avgMoveCount.toFixed(1) : '—'),
+    makeMetricPreviewCard('Avg expansions / stock', summary.avgExpansionCount != null ? summary.avgExpansionCount.toFixed(1) : '—'),
     makeMetricPreviewCard('Avg bases / stock', summary.avgBaseCount != null ? summary.avgBaseCount.toFixed(1) : '—'),
     makeMetricPreviewCard('Avg expansion %', summary.avgExpansion != null ? formatPercent(summary.avgExpansion, 1) : '—'),
     makeMetricPreviewCard('Avg best expansion %', summary.avgMaxExpansion != null ? formatPercent(summary.avgMaxExpansion, 1) : '—', summary.avgMaxExpansion != null && summary.avgMaxExpansion >= 10 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg biggest base', summary.avgBiggestBase != null ? `${summary.avgBiggestBase} bars` : '—'),
-    makeMetricPreviewCard('Avg deepest base', summary.avgDeepestBase != null ? formatPercent(summary.avgDeepestBase, 1) : '—'),
+    makeMetricPreviewCard('Avg exp length', summary.avgExpansionLength != null ? summary.avgExpansionLength.toFixed(1) : '—'),
+    makeMetricPreviewCard('Best exp length', summary.avgMaxExpansionLength != null ? summary.avgMaxExpansionLength.toFixed(1) : '—'),
+    makeMetricPreviewCard('Avg major base', summary.avgMajorBaseLength != null ? `${summary.avgMajorBaseLength.toFixed(1)} bars` : '—'),
+    makeMetricPreviewCard('Major base 80%', summary.majorBaseDepthP80 != null ? formatPercent(summary.majorBaseDepthP80, 1) : '—', summary.majorBaseDepthP80 != null ? 'warning' : ''),
+    makeMetricPreviewCard('Avg expansion base', summary.avgExpansionBaseLength != null ? `${summary.avgExpansionBaseLength.toFixed(1)} bars` : '—'),
+    makeMetricPreviewCard('Exp-base 80%', summary.expansionBaseDepthP80 != null ? formatPercent(summary.expansionBaseDepthP80, 1) : '—', summary.expansionBaseDepthP80 != null ? 'warning' : ''),
     makeMetricPreviewCard('Avg dip before move', summary.avgDipBeforeMove != null ? formatPercent(summary.avgDipBeforeMove, 1) : '—'),
     makeMetricPreviewCard('Winner dip 80%', summary.dipP80 != null ? formatPercent(summary.dipP80, 1) : '—', summary.dipP80 != null ? 'warning' : ''),
     makeMetricPreviewCard('Move : dip', summary.avgMoveToDip != null ? `${summary.avgMoveToDip.toFixed(2)}x` : '—', summary.avgMoveToDip != null && summary.avgMoveToDip >= 4 ? 'positive' : ''),
     makeMetricPreviewCard('Avg stage-4 decline', summary.avgStage4Decline != null ? formatPercent(summary.avgStage4Decline, 1) : '—', summary.avgStage4Decline != null && summary.avgStage4Decline <= 25 ? 'positive' : ''),
     makeMetricPreviewCard('Avg circuits', summary.avgCircuits != null ? String(summary.avgCircuits) : '—'),
   ].join('');
+
+  if (refs.winnerPatternAnalysis) refs.winnerPatternAnalysis.innerHTML = buildWinnerPatternAnalysisHtml(items, summary);
 
   if (!items.length) {
     refs.winnerTable.innerHTML = '<div class="panel empty-state">No winner database records match the current filters.</div>';
@@ -721,17 +883,17 @@ function renderWinnerSummary() {
           <tr>
             <th>Stock</th>
             <th>Sector</th>
-            <th>Type</th>
             <th>Setup</th>
             <th>TF</th>
-            <th>Period</th>
             <th>Moves</th>
+            <th>Exp</th>
             <th>Bases</th>
             <th>Avg exp</th>
-            <th>Best exp</th>
-            <th>Biggest base</th>
-            <th>Deepest base</th>
+            <th>Exp len</th>
+            <th>Major base</th>
+            <th>Exp-base depth</th>
             <th>Total move</th>
+            <th>Cycle days</th>
             <th>Dip</th>
             <th>Stage-4</th>
             <th>SuperMBI</th>
@@ -744,6 +906,7 @@ function renderWinnerSummary() {
             const meta = [];
             if (entry.breakoutDate) meta.push(formatDate(entry.breakoutDate));
             if (entry.effectiveInitialMove != null) meta.push(`Initial ${formatPercent(entry.effectiveInitialMove, 1)}`);
+            if (entry.period) meta.push(entry.period);
             const patternLine = createWinnerPatternLine(entry);
             const details = [patternLine, entry.notes].filter(Boolean).join(' • ');
             return `
@@ -753,17 +916,17 @@ function renderWinnerSummary() {
                 <div class="small-copy">${escapeHtml(meta.join(' • ') || 'No breakout date')}</div>
               </td>
               <td>${escapeHtml(entry.sector || '—')}</td>
-              <td>${escapeHtml(entry.type || '—')}</td>
               <td>${escapeHtml(entry.setup || '—')}</td>
               <td>${escapeHtml(entry.timeframe || '—')}</td>
-              <td>${escapeHtml(entry.period || '—')}</td>
               <td>${entry.pattern?.moveCount || '—'}</td>
+              <td>${entry.pattern?.totalExpansions || '—'}</td>
               <td>${entry.pattern?.totalBases || '—'}</td>
               <td>${entry.pattern?.avgExpansion == null ? '—' : formatPercent(entry.pattern.avgExpansion, 1)}</td>
-              <td class="${entry.pattern?.maxExpansion != null && entry.pattern.maxExpansion >= 10 ? 'positive' : ''}">${entry.pattern?.maxExpansion == null ? '—' : formatPercent(entry.pattern.maxExpansion, 1)}</td>
-              <td>${entry.pattern?.maxBaseLength == null ? '—' : `${entry.pattern.maxBaseLength} bars`}</td>
-              <td>${entry.pattern?.maxBaseDepth == null ? '—' : formatPercent(entry.pattern.maxBaseDepth, 1)}</td>
+              <td>${entry.pattern?.avgExpansionLength == null ? '—' : entry.pattern.avgExpansionLength.toFixed(1)}</td>
+              <td>${entry.pattern?.maxMajorBaseLength == null ? '—' : `${entry.pattern.maxMajorBaseLength} bars`}</td>
+              <td>${entry.pattern?.maxExpansionBaseDepth == null ? '—' : formatPercent(entry.pattern.maxExpansionBaseDepth, 1)}</td>
               <td class="${entry.effectiveMove != null && entry.effectiveMove >= 20 ? 'positive' : ''}">${entry.effectiveMove == null ? '—' : formatPercent(entry.effectiveMove, 1)}</td>
+              <td>${entry.pattern?.totalMoveDaysAuto == null ? '—' : entry.pattern.totalMoveDaysAuto.toFixed(1)}</td>
               <td>${entry.dipBeforeMove == null ? '—' : formatPercent(entry.dipBeforeMove, 1)}</td>
               <td>${entry.stage4Decline == null ? '—' : formatPercent(entry.stage4Decline, 1)}</td>
               <td>${entry.mbiScore ?? '—'}</td>
@@ -1177,51 +1340,106 @@ function handleJournalClick(event) {
   if (action === 'delete') handleDeleteTrade(tradeId);
 }
 
-const WINNER_MOVE_BASES = 4;
-const WINNER_MOVE_EXPANSIONS = 3;
+const WINNER_DEFAULT_EXPANSIONS = 1;
+
+function emptyWinnerBaseForm() {
+  return {
+    length: '',
+    depth: '',
+    tags: '',
+    notes: '',
+  };
+}
+
+function cloneWinnerBaseForForm(base = {}) {
+  return {
+    length: base?.length ?? '',
+    depth: base?.depth ?? '',
+    tags: stringifyTags(base?.tags || []),
+    notes: base?.notes || '',
+  };
+}
+
+function emptyWinnerExpansionForm() {
+  return {
+    id: uid('exp'),
+    pct: '',
+    length: '',
+    tags: '',
+    notes: '',
+    base: emptyWinnerBaseForm(),
+  };
+}
+
+function cloneWinnerExpansionForForm(expansion = {}) {
+  return {
+    id: expansion?.id || uid('exp'),
+    pct: expansion?.pct ?? '',
+    length: expansion?.length ?? '',
+    tags: stringifyTags(expansion?.tags || []),
+    notes: expansion?.notes || '',
+    base: cloneWinnerBaseForForm(expansion?.base || {}),
+  };
+}
 
 function emptyWinnerMoveForm() {
   return {
     id: uid('move'),
     movePct: '',
-    breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, () => ''),
-    bases: Array.from({ length: WINNER_MOVE_BASES }, () => ({
-      length: '',
-      depth: '',
-      expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, () => ''),
-    })),
+    moveDays: '',
+    tags: '',
+    notes: '',
+    preMoveBase: emptyWinnerBaseForm(),
+    expansions: Array.from({ length: WINNER_DEFAULT_EXPANSIONS }, () => emptyWinnerExpansionForm()),
   };
 }
 
-function cloneWinnerMoveForForm(move = {}) {
+function cloneWinnerMoveForForm(rawMove = {}) {
+  const source = normalizeWinnerMoves([rawMove])[0] || rawMove || {};
+  const expansions = (source.expansions || []).map(cloneWinnerExpansionForForm);
   return {
-    id: move.id || uid('move'),
-    movePct: move.movePct ?? move.move ?? move.totalMovePct ?? '',
-    breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, index) => move.breakoutExpansions?.[index] ?? ''),
-    bases: Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({
-      length: move.bases?.[baseIndex]?.length ?? '',
-      depth: move.bases?.[baseIndex]?.depth ?? '',
-      expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, expansionIndex) => move.bases?.[baseIndex]?.expansions?.[expansionIndex] ?? ''),
-    })),
+    id: source.id || uid('move'),
+    movePct: source.movePct ?? '',
+    moveDays: source.moveDays ?? '',
+    tags: stringifyTags(source.tags || []),
+    notes: source.notes || '',
+    preMoveBase: cloneWinnerBaseForForm(source.preMoveBase || {}),
+    expansions: expansions.length ? expansions : Array.from({ length: WINNER_DEFAULT_EXPANSIONS }, () => emptyWinnerExpansionForm()),
+  };
+}
+
+function readWinnerExpansionCard(card) {
+  return {
+    id: card?.dataset.expansionId || uid('exp'),
+    pct: card?.querySelector('[data-expansion-field="pct"]')?.value ?? '',
+    length: card?.querySelector('[data-expansion-field="length"]')?.value ?? '',
+    tags: card?.querySelector('[data-expansion-field="tags"]')?.value ?? '',
+    notes: card?.querySelector('[data-expansion-field="notes"]')?.value ?? '',
+    base: {
+      length: card?.querySelector('[data-expansion-base-field="length"]')?.value ?? '',
+      depth: card?.querySelector('[data-expansion-base-field="depth"]')?.value ?? '',
+      tags: card?.querySelector('[data-expansion-base-field="tags"]')?.value ?? '',
+      notes: card?.querySelector('[data-expansion-base-field="notes"]')?.value ?? '',
+    },
   };
 }
 
 function readWinnerMoveCard(card) {
   if (!card) return emptyWinnerMoveForm();
-  const move = emptyWinnerMoveForm();
-  move.id = card.dataset.moveId || uid('move');
-  move.movePct = card.querySelector('[data-move-field="movePct"]')?.value ?? '';
-  move.breakoutExpansions = Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, index) => (
-    card.querySelector(`[data-breakout-expansion-index="${index}"]`)?.value ?? ''
-  ));
-  move.bases = Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({
-    length: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="length"]`)?.value ?? '',
-    depth: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="depth"]`)?.value ?? '',
-    expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, expansionIndex) => (
-      card.querySelector(`[data-base-index="${baseIndex}"][data-base-expansion-index="${expansionIndex}"]`)?.value ?? ''
-    )),
-  }));
-  return move;
+  return {
+    id: card.dataset.moveId || uid('move'),
+    movePct: card.querySelector('[data-move-field="movePct"]')?.value ?? '',
+    moveDays: card.querySelector('[data-move-field="moveDays"]')?.value ?? '',
+    tags: card.querySelector('[data-move-field="tags"]')?.value ?? '',
+    notes: card.querySelector('[data-move-field="notes"]')?.value ?? '',
+    preMoveBase: {
+      length: card.querySelector('[data-prebase-field="length"]')?.value ?? '',
+      depth: card.querySelector('[data-prebase-field="depth"]')?.value ?? '',
+      tags: card.querySelector('[data-prebase-field="tags"]')?.value ?? '',
+      notes: card.querySelector('[data-prebase-field="notes"]')?.value ?? '',
+    },
+    expansions: [...card.querySelectorAll('[data-expansion-card]')].map(readWinnerExpansionCard),
+  };
 }
 
 function readWinnerMovesBuilderRaw() {
@@ -1233,45 +1451,101 @@ function readWinnerMovesBuilder() {
   return normalizeWinnerMoves(readWinnerMovesBuilderRaw());
 }
 
+function winnerMajorBaseLabel(moveIndex) {
+  return moveIndex === 0 ? 'Base before move' : `B${moveIndex}`;
+}
+
+function winnerExpansionBaseLabel(moveIndex, expansionIndex) {
+  return moveIndex === 0 ? `E${expansionIndex + 1}B` : `E${expansionIndex + 1}B${moveIndex}`;
+}
+
 function winnerMoveSummaryText(summary = {}) {
-  if (!summary.moveCount) return 'Move is empty. Add any expansion, base, or total move if you want this pattern included in analysis.';
+  if (!summary.moveCount) return 'Move is empty. Add any move %, days, expansion %, base depth, tags, or notes if you want this pattern included in analysis.';
   const parts = [];
-  if (summary.totalMovePctAuto != null) parts.push(`Auto move ${formatPercent(summary.totalMovePctAuto, 1)}`);
-  if (summary.totalBases) parts.push(`${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`);
-  if (summary.avgExpansion != null) parts.push(`Avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
-  if (summary.maxExpansion != null) parts.push(`Best expansion ${formatPercent(summary.maxExpansion, 1)}`);
-  if (summary.maxBaseLength != null) parts.push(`Biggest base ${summary.maxBaseLength} bars`);
-  if (summary.maxBaseDepth != null) parts.push(`Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`);
+  if (summary.totalMovePctAuto != null) parts.push(`auto move ${formatPercent(summary.totalMovePctAuto, 1)}`);
+  if (summary.totalMoveDaysAuto != null) parts.push(`auto days ${summary.totalMoveDaysAuto.toFixed(1)}`);
+  if (summary.totalExpansions) parts.push(`${summary.totalExpansions} expansion${summary.totalExpansions === 1 ? '' : 's'}`);
+  if (summary.totalMajorBases) parts.push(`${summary.totalMajorBases} major base`);
+  if (summary.totalExpansionBases) parts.push(`${summary.totalExpansionBases} expansion-base${summary.totalExpansionBases === 1 ? '' : 's'}`);
+  if (summary.avgExpansion != null) parts.push(`avg exp ${formatPercent(summary.avgExpansion, 1)}`);
+  if (summary.maxExpansion != null) parts.push(`best exp ${formatPercent(summary.maxExpansion, 1)}`);
+  if (summary.avgExpansionLength != null) parts.push(`avg exp len ${summary.avgExpansionLength.toFixed(1)}`);
+  if (summary.maxMajorBaseLength != null) parts.push(`major base ${summary.maxMajorBaseLength} bars`);
+  if (summary.maxExpansionBaseDepth != null) parts.push(`deepest exp-base ${formatPercent(summary.maxExpansionBaseDepth, 1)}`);
   return parts.join(' • ');
+}
+
+function winnerExpansionCardHtml(rawExpansion, expansionIndex, moveIndex) {
+  const expansion = cloneWinnerExpansionForForm(rawExpansion);
+  const baseLabel = winnerExpansionBaseLabel(moveIndex, expansionIndex);
+  return `
+    <div class="panel compact-top" data-expansion-card data-expansion-id="${escapeHtml(expansion.id)}">
+      <div class="section-row">
+        <div>
+          <div class="panel-title">E${expansionIndex + 1}</div>
+          <div class="small-copy">Track this expansion leg inside Move ${moveIndex + 1}, then map the base that formed after it.</div>
+        </div>
+        <button type="button" class="btn btn-ghost" data-move-builder-action="remove-expansion" data-expansion-id="${escapeHtml(expansion.id)}">Remove</button>
+      </div>
+      <div class="form-grid form-grid-4 compact-top">
+        <label class="field"><span>E${expansionIndex + 1} %</span><input data-expansion-field="pct" type="number" step="0.1" placeholder="8" value="${escapeHtml(String(expansion.pct ?? ''))}" /></label>
+        <label class="field"><span>E${expansionIndex + 1} length</span><input data-expansion-field="length" type="number" step="0.1" placeholder="6" value="${escapeHtml(String(expansion.length ?? ''))}" /></label>
+        <label class="field"><span>E${expansionIndex + 1} tags</span><input data-expansion-field="tags" type="text" placeholder="ignition, volume" value="${escapeHtml(expansion.tags || '')}" /></label>
+        <label class="field"><span>E${expansionIndex + 1} notes</span><input data-expansion-field="notes" type="text" placeholder="Gap, climax, clean trend" value="${escapeHtml(expansion.notes || '')}" /></label>
+      </div>
+      <div class="panel compact-top">
+        <div class="panel-title">${baseLabel}</div>
+        <div class="small-copy">Optional base after this expansion. Use it to study pullback depth, length, tags, and context before the next leg.</div>
+        <div class="form-grid form-grid-4 compact-top">
+          <label class="field"><span>${baseLabel} length</span><input data-expansion-base-field="length" type="number" step="0.1" placeholder="10" value="${escapeHtml(String(expansion.base.length ?? ''))}" /></label>
+          <label class="field"><span>${baseLabel} depth %</span><input data-expansion-base-field="depth" type="number" step="0.1" placeholder="9" value="${escapeHtml(String(expansion.base.depth ?? ''))}" /></label>
+          <label class="field"><span>${baseLabel} tags</span><input data-expansion-base-field="tags" type="text" placeholder="tight, shallow, low-volume" value="${escapeHtml(expansion.base.tags || '')}" /></label>
+          <label class="field"><span>${baseLabel} notes</span><input data-expansion-base-field="notes" type="text" placeholder="Undercut, wedge, handle" value="${escapeHtml(expansion.base.notes || '')}" /></label>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function winnerMoveCardHtml(rawMove, moveIndex) {
   const move = cloneWinnerMoveForForm(rawMove);
   const summary = summarizeWinnerPattern([move]);
+  const majorBaseLabel = winnerMajorBaseLabel(moveIndex);
   return `
     <div class="panel compact-top" data-move-card data-move-id="${escapeHtml(move.id)}">
       <div class="section-row">
         <div>
           <div class="panel-title">Move ${moveIndex + 1}</div>
-          <div class="small-copy">Use E1B / E2B / E3B for the initial burst, then B1-B4 for each base with its post-base expansions.</div>
+          <div class="small-copy">Every move can have multiple expansions, each expansion can have its own base, and Move ${moveIndex + 1} can also reference the major base that launched it.</div>
         </div>
-        <button type="button" class="btn btn-ghost" data-move-builder-action="remove" data-move-id="${escapeHtml(move.id)}">Remove</button>
+        <button type="button" class="btn btn-ghost" data-move-builder-action="remove-move" data-move-id="${escapeHtml(move.id)}">Remove</button>
       </div>
       <div class="form-grid form-grid-4 compact-top">
-        <label class="field"><span>Move ${moveIndex + 1} total %</span><input data-move-field="movePct" type="number" step="0.1" placeholder="Auto if blank" value="${escapeHtml(String(move.movePct ?? ''))}" /></label>
-        <label class="field"><span>E1B %</span><input data-breakout-expansion-index="0" type="number" step="0.1" placeholder="6" value="${escapeHtml(String(move.breakoutExpansions[0] ?? ''))}" /></label>
-        <label class="field"><span>E2B %</span><input data-breakout-expansion-index="1" type="number" step="0.1" placeholder="5" value="${escapeHtml(String(move.breakoutExpansions[1] ?? ''))}" /></label>
-        <label class="field"><span>E3B %</span><input data-breakout-expansion-index="2" type="number" step="0.1" placeholder="4" value="${escapeHtml(String(move.breakoutExpansions[2] ?? ''))}" /></label>
+        <label class="field"><span>Move ${moveIndex + 1} %</span><input data-move-field="movePct" type="number" step="0.1" placeholder="Auto if blank" value="${escapeHtml(String(move.movePct ?? ''))}" /></label>
+        <label class="field"><span>Move ${moveIndex + 1} days</span><input data-move-field="moveDays" type="number" step="0.1" placeholder="Auto if blank" value="${escapeHtml(String(move.moveDays ?? ''))}" /></label>
+        <label class="field"><span>Move ${moveIndex + 1} tags</span><input data-move-field="tags" type="text" placeholder="climactic, persistent, high RS" value="${escapeHtml(move.tags || '')}" /></label>
+        <label class="field"><span>Move ${moveIndex + 1} notes</span><input data-move-field="notes" type="text" placeholder="What defined this leg?" value="${escapeHtml(move.notes || '')}" /></label>
       </div>
-      ${move.bases.map((base, baseIndex) => `
-        <div class="form-grid form-grid-3 compact-top">
-          <label class="field"><span>B${baseIndex + 1} length</span><input data-base-index="${baseIndex}" data-base-field="length" type="number" step="0.1" placeholder="18" value="${escapeHtml(String(base.length ?? ''))}" /></label>
-          <label class="field"><span>B${baseIndex + 1} depth %</span><input data-base-index="${baseIndex}" data-base-field="depth" type="number" step="0.1" placeholder="12" value="${escapeHtml(String(base.depth ?? ''))}" /></label>
-          <label class="field"><span>E1B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="0" type="number" step="0.1" placeholder="7" value="${escapeHtml(String(base.expansions[0] ?? ''))}" /></label>
-          <label class="field"><span>E2B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="1" type="number" step="0.1" placeholder="5" value="${escapeHtml(String(base.expansions[1] ?? ''))}" /></label>
-          <label class="field"><span>E3B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="2" type="number" step="0.1" placeholder="4" value="${escapeHtml(String(base.expansions[2] ?? ''))}" /></label>
+      <div class="panel compact-top">
+        <div class="panel-title">${majorBaseLabel}</div>
+        <div class="small-copy">Major base that existed before this move. For Move 2 this becomes B1, for Move 3 it becomes B2, and so on.</div>
+        <div class="form-grid form-grid-4 compact-top">
+          <label class="field"><span>${majorBaseLabel} length</span><input data-prebase-field="length" type="number" step="0.1" placeholder="20" value="${escapeHtml(String(move.preMoveBase.length ?? ''))}" /></label>
+          <label class="field"><span>${majorBaseLabel} depth %</span><input data-prebase-field="depth" type="number" step="0.1" placeholder="14" value="${escapeHtml(String(move.preMoveBase.depth ?? ''))}" /></label>
+          <label class="field"><span>${majorBaseLabel} tags</span><input data-prebase-field="tags" type="text" placeholder="stage-2, tight, dry-up" value="${escapeHtml(move.preMoveBase.tags || '')}" /></label>
+          <label class="field"><span>${majorBaseLabel} notes</span><input data-prebase-field="notes" type="text" placeholder="Cup-with-handle, IPO base, re-tighten" value="${escapeHtml(move.preMoveBase.notes || '')}" /></label>
         </div>
-      `).join('')}
+      </div>
+      <div class="section-row compact-top">
+        <div>
+          <div class="panel-title">Expansions inside Move ${moveIndex + 1}</div>
+          <div class="small-copy">Add E1, E2, E3 and beyond. Every expansion can have its own post-expansion base like ${winnerExpansionBaseLabel(moveIndex, 0)}.</div>
+        </div>
+        <button type="button" class="btn btn-ghost" data-move-builder-action="add-expansion" data-move-id="${escapeHtml(move.id)}">+ Add expansion</button>
+      </div>
+      <div class="compact-top">
+        ${move.expansions.length ? move.expansions.map((expansion, expansionIndex) => winnerExpansionCardHtml(expansion, expansionIndex, moveIndex)).join('') : '<div class="panel-note compact-top">No expansions added yet for this move.</div>'}
+      </div>
       <div class="panel-note compact-top">${escapeHtml(winnerMoveSummaryText(summary))}</div>
     </div>
   `;
@@ -1281,19 +1555,21 @@ function renderWinnerMovesSummary() {
   if (!refs.winnerMovesSummary) return;
   const summary = summarizeWinnerPattern(readWinnerMovesBuilderRaw());
   if (!summary.moveCount) {
-    refs.winnerMovesSummary.innerHTML = 'No move pattern data yet. Add Move 1, Move 2, and any B1-B4 / E1B1 style numbers you want to study. All fields are optional.';
+    refs.winnerMovesSummary.innerHTML = 'No cycle map yet. Add Move 1, then as many expansions and post-expansion bases as you want. Every field is optional.';
     return;
   }
   const parts = [
     `${summary.moveCount} move${summary.moveCount === 1 ? '' : 's'}`,
+    `${summary.totalExpansions} expansion${summary.totalExpansions === 1 ? '' : 's'}`,
     `${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`,
   ];
-  if (summary.avgExpansion != null) parts.push(`Avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
-  if (summary.maxExpansion != null) parts.push(`Best expansion ${formatPercent(summary.maxExpansion, 1)}`);
-  if (summary.maxBaseLength != null) parts.push(`Biggest base ${summary.maxBaseLength} bars`);
-  if (summary.maxBaseDepth != null) parts.push(`Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`);
-  if (summary.totalMovePctAuto != null) parts.push(`Auto total move ${formatPercent(summary.totalMovePctAuto, 1)}`);
-  refs.winnerMovesSummary.innerHTML = `<div class="text-strong">Pattern builder auto-summary</div><div>${escapeHtml(parts.join(' • '))}</div>`;
+  if (summary.totalMovePctAuto != null) parts.push(`auto total move ${formatPercent(summary.totalMovePctAuto, 1)}`);
+  if (summary.totalMoveDaysAuto != null) parts.push(`auto cycle days ${summary.totalMoveDaysAuto.toFixed(1)}`);
+  if (summary.avgExpansion != null) parts.push(`avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
+  if (summary.avgExpansionLength != null) parts.push(`avg expansion length ${summary.avgExpansionLength.toFixed(1)}`);
+  if (summary.maxMajorBaseLength != null) parts.push(`biggest major base ${summary.maxMajorBaseLength} bars`);
+  if (summary.maxExpansionBaseDepth != null) parts.push(`deepest exp-base ${formatPercent(summary.maxExpansionBaseDepth, 1)}`);
+  refs.winnerMovesSummary.innerHTML = `<div class="text-strong">Cycle map auto-summary</div><div>${escapeHtml(parts.join(' • '))}</div>`;
 }
 
 function renderWinnerMovesBuilder(moves = []) {
@@ -1301,17 +1577,37 @@ function renderWinnerMovesBuilder(moves = []) {
   const items = (Array.isArray(moves) ? moves : []).map(cloneWinnerMoveForForm);
   refs.winnerMovesBuilder.innerHTML = items.length
     ? items.map((move, index) => winnerMoveCardHtml(move, index)).join('')
-    : '<div class="panel-note compact-top">No move legs added yet. Use <strong>Add move</strong> to capture Move 1, Move 2, and their bases/expansions. Every field is optional.</div>';
+    : '<div class="panel-note compact-top">No move legs added yet. Use <strong>Add move</strong> to map the full bull cycle: moves, expansions, major bases, and expansion bases. Every field is optional.</div>';
   renderWinnerMovesSummary();
 }
 
 function handleWinnerMovesBuilderClick(event) {
   const button = event.target.closest('[data-move-builder-action]');
   if (!button) return;
-  if (button.dataset.moveBuilderAction === 'remove') {
-    const moveId = button.dataset.moveId;
-    const items = readWinnerMovesBuilderRaw().filter((move) => move.id !== moveId);
-    renderWinnerMovesBuilder(items);
+  const action = button.dataset.moveBuilderAction;
+  const moveId = button.dataset.moveId;
+  const expansionId = button.dataset.expansionId;
+  const items = readWinnerMovesBuilderRaw();
+
+  if (action === 'remove-move') {
+    renderWinnerMovesBuilder(items.filter((move) => move.id !== moveId));
+    return;
+  }
+
+  if (action === 'add-expansion') {
+    const updated = items.map((move) => (move.id === moveId
+      ? { ...move, expansions: [...(move.expansions || []), emptyWinnerExpansionForm()] }
+      : move));
+    renderWinnerMovesBuilder(updated);
+    return;
+  }
+
+  if (action === 'remove-expansion') {
+    const updated = items.map((move) => ({
+      ...move,
+      expansions: (move.expansions || []).filter((expansion) => expansion.id !== expansionId),
+    }));
+    renderWinnerMovesBuilder(updated);
   }
 }
 
@@ -1319,12 +1615,15 @@ function createWinnerPatternLine(entry = {}) {
   if (!(entry.pattern?.moveCount > 0)) return '';
   const parts = [];
   parts.push(`${entry.pattern.moveCount} move${entry.pattern.moveCount === 1 ? '' : 's'}`);
-  if (entry.pattern.totalBases) parts.push(`${entry.pattern.totalBases} bases`);
+  if (entry.pattern.totalExpansions) parts.push(`${entry.pattern.totalExpansions} expansions`);
+  if (entry.pattern.totalMajorBases) parts.push(`${entry.pattern.totalMajorBases} major bases`);
+  if (entry.pattern.totalExpansionBases) parts.push(`${entry.pattern.totalExpansionBases} expansion-bases`);
   if (entry.pattern.avgExpansion != null) parts.push(`avg expansion ${formatPercent(entry.pattern.avgExpansion, 1)}`);
-  if (entry.pattern.maxExpansion != null) parts.push(`best expansion ${formatPercent(entry.pattern.maxExpansion, 1)}`);
-  if (entry.pattern.maxBaseLength != null) parts.push(`biggest base ${entry.pattern.maxBaseLength} bars`);
-  if (entry.pattern.maxBaseDepth != null) parts.push(`deepest base ${formatPercent(entry.pattern.maxBaseDepth, 1)}`);
-  if (entry.effectiveMove != null) parts.push(`auto move ${formatPercent(entry.effectiveMove, 1)}`);
+  if (entry.pattern.avgExpansionLength != null) parts.push(`avg exp length ${entry.pattern.avgExpansionLength.toFixed(1)}`);
+  if (entry.pattern.maxMajorBaseLength != null) parts.push(`biggest major base ${entry.pattern.maxMajorBaseLength} bars`);
+  if (entry.pattern.maxExpansionBaseDepth != null) parts.push(`deepest exp-base ${formatPercent(entry.pattern.maxExpansionBaseDepth, 1)}`);
+  if (entry.pattern.totalMovePctAuto != null) parts.push(`auto move ${formatPercent(entry.pattern.totalMovePctAuto, 1)}`);
+  if (entry.pattern.totalMoveDaysAuto != null) parts.push(`auto cycle days ${entry.pattern.totalMoveDaysAuto.toFixed(1)}`);
   return parts.join(' • ');
 }
 
@@ -2215,11 +2514,17 @@ function bindToolbarEvents() {
   bindWinnerFilter('#winnerMaxStage4Filter', 'maxStage4Decline');
   bindWinnerFilter('#winnerMinMbiFilter', 'minMbi');
   bindWinnerFilter('#winnerMinMoveCountFilter', 'minMoveCount');
+  bindWinnerFilter('#winnerMinExpansionCountFilter', 'minExpansionCount');
   bindWinnerFilter('#winnerMinBaseCountFilter', 'minBaseCount');
+  bindWinnerFilter('#winnerMinMoveDaysFilter', 'minMoveDays');
   bindWinnerFilter('#winnerMinAvgExpansionFilter', 'minAvgExpansion');
   bindWinnerFilter('#winnerMinMaxExpansionFilter', 'minMaxExpansion');
-  bindWinnerFilter('#winnerMinBiggestBaseFilter', 'minBiggestBaseLength');
-  bindWinnerFilter('#winnerMaxDeepestBaseFilter', 'maxDeepestBase');
+  bindWinnerFilter('#winnerMinAvgExpansionLengthFilter', 'minAvgExpansionLength');
+  bindWinnerFilter('#winnerMinMaxExpansionLengthFilter', 'minMaxExpansionLength');
+  bindWinnerFilter('#winnerMinMajorBaseFilter', 'minMajorBaseLength');
+  bindWinnerFilter('#winnerMaxMajorBaseDepthFilter', 'maxMajorBaseDepth');
+  bindWinnerFilter('#winnerMinExpansionBaseFilter', 'minExpansionBaseLength');
+  bindWinnerFilter('#winnerMaxExpansionBaseDepthFilter', 'maxExpansionBaseDepth');
   bindWinnerFilter('#winnerHasImageFilter', 'hasImage');
   bindWinnerFilter('#winnerSortSelect', 'sort');
 

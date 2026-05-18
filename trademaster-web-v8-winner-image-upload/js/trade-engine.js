@@ -53,7 +53,51 @@ function sameLocalDate(a, b) {
   const da = new Date(a);
   const db = new Date(b);
   if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false;
-  return da.toISOString().slice(0, 10) === db.toISOString().slice(0, 10);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+}
+
+function compareNullableNumbers(a, b, direction = 'DESC') {
+  const left = a == null ? null : Number(a);
+  const right = b == null ? null : Number(b);
+  const leftMissing = left == null || !Number.isFinite(left);
+  const rightMissing = right == null || !Number.isFinite(right);
+  if (leftMissing && rightMissing) return 0;
+  if (leftMissing) return 1;
+  if (rightMissing) return -1;
+  return direction === 'ASC' ? left - right : right - left;
+}
+
+
+function toNullableNumber(value) {
+  if (value === '' || value == null) return null;
+  const parsed = Number(String(value).replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function averageNullableNumbers(values = []) {
+  const items = values.map((value) => toNullableNumber(value)).filter((value) => value != null);
+  if (!items.length) return null;
+  return round(items.reduce((sum, value) => sum + value, 0) / items.length, 2);
+}
+
+function percentileNullableNumbers(values = [], percentile = 0.8) {
+  const items = values.map((value) => toNullableNumber(value)).filter((value) => value != null).sort((a, b) => a - b);
+  if (!items.length) return null;
+  const clamped = Math.max(0, Math.min(1, Number(percentile || 0)));
+  const rank = (items.length - 1) * clamped;
+  const lower = Math.floor(rank);
+  const upper = Math.ceil(rank);
+  if (lower === upper) return round(items[lower], 2);
+  const weight = rank - lower;
+  return round(items[lower] + (items[upper] - items[lower]) * weight, 2);
+}
+
+function tradeSortStamp(trade) {
+  const effectiveDate = trade.metrics?.status === 'CLOSED'
+    ? (trade.metrics.exitAt || trade.metrics.entryAt || trade.createdAt)
+    : (trade.metrics?.entryAt || trade.createdAt);
+  const stamp = new Date(effectiveDate).getTime();
+  return Number.isFinite(stamp) ? stamp : null;
 }
 
 export function inferTradeTimeframe(trade = {}, metrics = {}) {
@@ -76,6 +120,98 @@ function calculateReturnPct(direction, avgEntryPrice, avgExitPrice) {
     ? ((avgExitPrice - avgEntryPrice) / avgEntryPrice) * 100
     : ((avgEntryPrice - avgExitPrice) / avgEntryPrice) * 100;
   return round(move, 2);
+}
+
+function estimateConfiguredRiskAmount(trade = {}, metrics = {}) {
+  const plannedRisk = Number(trade.plannedRisk || 0);
+  if (plannedRisk > 0) return round(plannedRisk);
+
+  const plannedStop = Number(trade.plannedStop || 0);
+  const entryPrice = Number(metrics.avgEntryPrice || metrics.avgOpenPrice || 0);
+  const entryQty = Number(metrics.totalEntryQty || metrics.openQty || 0);
+  if (!(plannedStop > 0) || !(entryPrice > 0) || !(entryQty > 0)) return 0;
+
+  const perUnitRisk = (trade.direction || 'LONG') === 'SHORT'
+    ? plannedStop - entryPrice
+    : entryPrice - plannedStop;
+  if (!(perUnitRisk > 0)) return 0;
+  return round(perUnitRisk * entryQty);
+}
+
+function estimateCurrentOpenRiskAmount(trade = {}, metrics = {}) {
+  if ((metrics.status || 'OPEN') !== 'OPEN') return 0;
+
+  const plannedRisk = Number(trade.plannedRisk || 0);
+  const openQty = Number(metrics.openQty || 0);
+  const totalEntryQty = Number(metrics.totalEntryQty || 0);
+  if (plannedRisk > 0) {
+    if (openQty > 0 && totalEntryQty > 0 && openQty < totalEntryQty) {
+      return round(plannedRisk * (openQty / totalEntryQty));
+    }
+    return round(plannedRisk);
+  }
+
+  const plannedStop = Number(trade.plannedStop || 0);
+  const openPrice = Number(metrics.avgOpenPrice || metrics.avgEntryPrice || 0);
+  if (!(plannedStop > 0) || !(openPrice > 0) || !(openQty > 0)) return 0;
+
+  const perUnitRisk = (trade.direction || 'LONG') === 'SHORT'
+    ? plannedStop - openPrice
+    : openPrice - plannedStop;
+  if (!(perUnitRisk > 0)) return 0;
+  return round(perUnitRisk * openQty);
+}
+
+function buildOpenRiskProfile(items = [], referenceTime = Date.now()) {
+  const events = [];
+  let currentOpenRisk = 0;
+  let trackedRiskTradeCount = 0;
+  let trackedOpenRiskTradeCount = 0;
+
+  for (const trade of items) {
+    const metrics = trade.metrics || {};
+    const configuredRisk = estimateConfiguredRiskAmount(trade, metrics);
+    const startStamp = new Date(metrics.entryAt || trade.createdAt || '').getTime();
+    const endSource = metrics.status === 'CLOSED'
+      ? (metrics.exitAt || trade.updatedAt || trade.createdAt)
+      : referenceTime;
+    const endStamp = typeof endSource === 'number' ? endSource : new Date(endSource || '').getTime();
+
+    if (configuredRisk > 0 && Number.isFinite(startStamp) && Number.isFinite(endStamp) && endStamp >= startStamp) {
+      trackedRiskTradeCount += 1;
+      events.push({ time: startStamp, delta: configuredRisk });
+      events.push({ time: endStamp, delta: -configuredRisk });
+    }
+
+    if (metrics.status === 'OPEN') {
+      const openRisk = estimateCurrentOpenRiskAmount(trade, metrics);
+      if (openRisk > 0) {
+        trackedOpenRiskTradeCount += 1;
+        currentOpenRisk += openRisk;
+      }
+    }
+  }
+
+  events.sort((a, b) => a.time - b.time || a.delta - b.delta);
+
+  let running = 0;
+  let peak = 0;
+  const series = [];
+  for (const event of events) {
+    running += event.delta;
+    peak = Math.max(peak, running);
+    const existing = series[series.length - 1];
+    if (existing && existing.time === event.time) existing.value = round(running);
+    else series.push({ time: event.time, value: round(running) });
+  }
+
+  return {
+    currentOpenRisk: round(currentOpenRisk),
+    peakOpenRisk: round(peak),
+    trackedRiskTradeCount,
+    trackedOpenRiskTradeCount,
+    series,
+  };
 }
 
 export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
@@ -251,7 +387,23 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
   const grossLossAbs = losses.reduce((sum, trade) => sum + Math.abs(trade.metrics.realizedNetPnl), 0);
   const netPnl = closed.reduce((sum, trade) => sum + trade.metrics.realizedNetPnl, 0);
   const avgWin = wins.length ? grossProfit / wins.length : 0;
-  const avgLoss = losses.length ? -grossLossAbs / losses.length : 0;
+  const avgLossAbs = losses.length ? grossLossAbs / losses.length : 0;
+  const avgLoss = losses.length ? -avgLossAbs : 0;
+  const avgWinHoldMinutes = wins.length
+    ? wins.reduce((sum, trade) => sum + Number(trade.metrics.holdMinutes || 0), 0) / wins.length
+    : 0;
+  const avgLossHoldMinutes = losses.length
+    ? losses.reduce((sum, trade) => sum + Number(trade.metrics.holdMinutes || 0), 0) / losses.length
+    : 0;
+
+  const dipValues = closed.map((trade) => trade.dipBeforeMove).filter((value) => toNullableNumber(value) != null);
+  const dipWinValues = wins.map((trade) => trade.dipBeforeMove).filter((value) => toNullableNumber(value) != null);
+  const dipLossValues = losses.map((trade) => trade.dipBeforeMove).filter((value) => toNullableNumber(value) != null);
+  const avgDipBeforeMove = averageNullableNumbers(dipValues);
+  const avgWinDipBeforeMove = averageNullableNumbers(dipWinValues);
+  const avgLossDipBeforeMove = averageNullableNumbers(dipLossValues);
+  const winnerDipP80 = percentileNullableNumbers(dipWinValues, 0.8);
+  const lossDipP80 = percentileNullableNumbers(dipLossValues, 0.8);
 
   let cumulative = 0;
   let peak = 0;
@@ -294,6 +446,8 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     return worst;
   }, null);
 
+  const riskProfile = buildOpenRiskProfile(items);
+
   return {
     tradeCount: items.length,
     openTradeCount: open.length,
@@ -301,12 +455,25 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     winCount: wins.length,
     lossCount: losses.length,
     winRate: closed.length ? (wins.length / closed.length) * 100 : 0,
+    lossRate: closed.length ? (losses.length / closed.length) * 100 : 0,
     grossProfit,
     grossLoss: -grossLossAbs,
+    grossLossAbs,
     netPnl,
     avgWin,
     avgLoss,
+    avgLossAbs,
     avgTrade: closed.length ? netPnl / closed.length : 0,
+    avgWinHoldMinutes,
+    avgLossHoldMinutes,
+    dipSampleCount: dipValues.length,
+    dipWinSampleCount: dipWinValues.length,
+    dipLossSampleCount: dipLossValues.length,
+    avgDipBeforeMove,
+    avgWinDipBeforeMove,
+    avgLossDipBeforeMove,
+    winnerDipP80,
+    lossDipP80,
     profitFactor: grossLossAbs > 0 ? grossProfit / grossLossAbs : undefined,
     expectancy: closed.length ? netPnl / closed.length : 0,
     maxDrawdown,
@@ -314,6 +481,11 @@ export function summarizeJournal(trades, method = PNL_METHODS.AVERAGE) {
     bestLossStreak,
     bestTrade,
     worstTrade,
+    currentOpenRisk: riskProfile.currentOpenRisk,
+    peakOpenRisk: riskProfile.peakOpenRisk,
+    trackedRiskTradeCount: riskProfile.trackedRiskTradeCount,
+    trackedOpenRiskTradeCount: riskProfile.trackedOpenRiskTradeCount,
+    openRiskSeries: riskProfile.series,
     items,
   };
 }
@@ -394,6 +566,7 @@ export function normalizeTradePayload(payload) {
     notes: String(payload.notes || '').trim(),
     plannedRisk: Number(payload.plannedRisk || 0),
     plannedStop: Number(payload.plannedStop || 0),
+    dipBeforeMove: toNullableNumber(payload.dipBeforeMove),
     mbiScore: payload.mbiScore === '' || payload.mbiScore == null ? null : Number(payload.mbiScore),
     fills: sortFills(
       (payload.fills || []).map((fill) => ({
@@ -412,6 +585,7 @@ export function filterTrades(trades, filters, method = PNL_METHODS.AVERAGE) {
   const minMbi = Number(filters.minMbi || 0);
   const lossWorseThan = Number(filters.lossWorseThan || 0);
   const minAbsMove = Number(filters.minAbsMove || 0);
+  const maxDipBeforeMove = Number(filters.maxDipBeforeMove || 0);
 
   return items.filter((trade) => {
     const text = (filters.search || '').trim().toLowerCase();
@@ -452,6 +626,9 @@ export function filterTrades(trades, filters, method = PNL_METHODS.AVERAGE) {
     if (minAbsMove > 0) {
       if (!(trade.metrics.absMovePct != null && trade.metrics.absMovePct >= Math.abs(minAbsMove))) return false;
     }
+    if (maxDipBeforeMove > 0) {
+      if (!(toNullableNumber(trade.dipBeforeMove) != null && Number(trade.dipBeforeMove) <= Math.abs(maxDipBeforeMove))) return false;
+    }
 
     return true;
   });
@@ -461,29 +638,39 @@ export function sortTrades(tradesWithMetrics, sortKey) {
   const items = [...tradesWithMetrics];
   items.sort((a, b) => {
     switch (sortKey) {
-      case 'DATE_ASC':
-        return new Date(a.metrics.entryAt || a.createdAt).getTime() - new Date(b.metrics.entryAt || b.createdAt).getTime();
+      case 'DATE_ASC': {
+        const diff = compareNullableNumbers(tradeSortStamp(a), tradeSortStamp(b), 'ASC');
+        if (diff !== 0) return diff;
+        return String(a.symbol || '').localeCompare(String(b.symbol || ''), undefined, { sensitivity: 'base' });
+      }
       case 'PNL_ASC':
-        return a.metrics.realizedNetPnl - b.metrics.realizedNetPnl;
+        return compareNullableNumbers(a.metrics.realizedNetPnl, b.metrics.realizedNetPnl, 'ASC');
       case 'PNL_DESC':
-        return b.metrics.realizedNetPnl - a.metrics.realizedNetPnl;
+        return compareNullableNumbers(a.metrics.realizedNetPnl, b.metrics.realizedNetPnl, 'DESC');
       case 'R_DESC':
-        return (b.metrics.realizedR || -Infinity) - (a.metrics.realizedR || -Infinity);
+        return compareNullableNumbers(a.metrics.realizedR, b.metrics.realizedR, 'DESC');
       case 'SYMBOL_ASC':
-        return a.symbol.localeCompare(b.symbol);
+        return String(a.symbol || '').localeCompare(String(b.symbol || ''), undefined, { sensitivity: 'base' });
       case 'HOLD_DESC':
-        return b.metrics.holdMinutes - a.metrics.holdMinutes;
+        return compareNullableNumbers(a.metrics.holdMinutes, b.metrics.holdMinutes, 'DESC');
       case 'RETURN_DESC':
-        return (b.metrics.realizedPct || -Infinity) - (a.metrics.realizedPct || -Infinity);
+        return compareNullableNumbers(a.metrics.realizedPct, b.metrics.realizedPct, 'DESC');
       case 'RETURN_ASC':
-        return (a.metrics.realizedPct || Infinity) - (b.metrics.realizedPct || Infinity);
+        return compareNullableNumbers(a.metrics.realizedPct, b.metrics.realizedPct, 'ASC');
       case 'MOVE_DESC':
-        return (b.metrics.absMovePct || -Infinity) - (a.metrics.absMovePct || -Infinity);
+        return compareNullableNumbers(a.metrics.absMovePct, b.metrics.absMovePct, 'DESC');
+      case 'DIP_ASC':
+        return compareNullableNumbers(a.dipBeforeMove, b.dipBeforeMove, 'ASC');
+      case 'DIP_DESC':
+        return compareNullableNumbers(a.dipBeforeMove, b.dipBeforeMove, 'DESC');
       case 'MBI_DESC':
-        return (b.mbiScore || -Infinity) - (a.mbiScore || -Infinity);
+        return compareNullableNumbers(a.mbiScore, b.mbiScore, 'DESC');
       case 'DATE_DESC':
-      default:
-        return new Date(b.metrics.entryAt || b.createdAt).getTime() - new Date(a.metrics.entryAt || a.createdAt).getTime();
+      default: {
+        const diff = compareNullableNumbers(tradeSortStamp(a), tradeSortStamp(b), 'DESC');
+        if (diff !== 0) return diff;
+        return String(a.symbol || '').localeCompare(String(b.symbol || ''), undefined, { sensitivity: 'base' });
+      }
     }
   });
   return items;
@@ -503,6 +690,7 @@ export function toCsvRows(trades, method = PNL_METHODS.AVERAGE) {
     'Avg Entry',
     'Avg Exit',
     'Move %',
+    'Dip Before Move %',
     'Open Qty',
     'Net PnL',
     'R Multiple',
@@ -523,6 +711,7 @@ export function toCsvRows(trades, method = PNL_METHODS.AVERAGE) {
     trade.metrics.avgEntryPrice ?? '',
     trade.metrics.avgExitPrice ?? '',
     trade.metrics.realizedPct ?? '',
+    trade.dipBeforeMove ?? '',
     trade.metrics.openQty,
     round(trade.metrics.realizedNetPnl),
     trade.metrics.realizedR != null ? round(trade.metrics.realizedR, 2) : '',

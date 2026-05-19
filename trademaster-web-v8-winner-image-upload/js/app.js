@@ -27,7 +27,10 @@ import {
   filterWinnerEntries,
   sortWinnerEntries,
   summarizeWinnerEntries,
+  flattenWinnerObservations,
+  buildWinnerExportData,
 } from './winner-db.js';
+import { answerJournalQuestion, answerWinnerQuestion } from './local-assistant.js';
 import {
   $, $$,
   cn,
@@ -143,6 +146,9 @@ function initRefs() {
   refs.importTradebookBtn = $('#importTradebookBtn');
   refs.importTradebookInput = $('#importTradebookInput');
   refs.importSummary = $('#importSummary');
+  refs.journalAssistantInput = $('#journalAssistantInput');
+  refs.journalAssistantAnswer = $('#journalAssistantAnswer');
+  refs.askJournalAssistantBtn = $('#askJournalAssistantBtn');
   refs.resetCalcBtn = $('#resetCalcBtn');
   refs.pushCalcToTradeBtn = $('#pushCalcToTradeBtn');
   refs.copyCoachPromptBtn = $('#copyCoachPromptBtn');
@@ -164,6 +170,9 @@ function initRefs() {
   refs.winnerTable = $('#winnerTable');
   refs.winnerSummaryCards = $('#winnerSummaryCards');
   refs.winnerPatternAnalysis = $('#winnerPatternAnalysis');
+  refs.winnerAssistantInput = $('#winnerAssistantInput');
+  refs.winnerAssistantAnswer = $('#winnerAssistantAnswer');
+  refs.askWinnerAssistantBtn = $('#askWinnerAssistantBtn');
   refs.winnerFilterSummary = $('#winnerFilterSummary');
   refs.winnerSectorFilter = $('#winnerSectorFilter');
   refs.winnerTypeFilter = $('#winnerTypeFilter');
@@ -324,6 +333,13 @@ function periodPresetRange(preset) {
 function getFilteredTradesRaw() {
   const filtered = filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
   return filtered.map(({ metrics, ...trade }) => trade);
+}
+
+function getFilteredTradesWithMetrics() {
+  return sortTrades(
+    filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE),
+    state.filters.sort,
+  );
 }
 
 function getRenderableTrades() {
@@ -1047,6 +1063,7 @@ function renderAll() {
   renderCoach();
   renderCharts();
   renderSettingsForm();
+  refreshAssistants();
 }
 
 function makeMetricPreviewCard(label, value, className = '') {
@@ -1312,6 +1329,184 @@ function exportJson() {
     winners: state.winners,
   };
   downloadTextFile(`trademaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2));
+}
+
+function rowsToCsvText(rows = []) {
+  if (!rows.length) return '';
+  if (Array.isArray(rows[0])) {
+    return rows
+      .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+  }
+  const headers = Object.keys(rows[0] || {});
+  const lines = [headers];
+  rows.forEach((row) => {
+    lines.push(headers.map((header) => row[header] ?? ''));
+  });
+  return lines
+    .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+}
+
+function downloadCsvFromRows(fileName, rows = []) {
+  downloadTextFile(fileName, rowsToCsvText(rows), 'text/csv');
+}
+
+function ensureXlsxLoaded() {
+  if (!window.XLSX) {
+    throw new Error('Excel export library did not load. Refresh the page and try again.');
+  }
+  return window.XLSX;
+}
+
+function buildTradeFillExportRows(trades = []) {
+  const rows = [];
+  trades.forEach((trade) => {
+    (trade.fills || []).forEach((fill, index) => {
+      rows.push({
+        'Trade ID': trade.id,
+        Symbol: trade.symbol,
+        Direction: trade.direction,
+        Timeframe: trade.timeframe,
+        Strategy: trade.strategy || '',
+        'Fill #': index + 1,
+        'Executed At': fill.executedAt || '',
+        Side: fill.side,
+        Qty: fill.qty,
+        Price: fill.price,
+        Fees: fill.fees || 0,
+        Note: fill.note || '',
+      });
+    });
+  });
+  return rows;
+}
+
+function exportJournalExcel() {
+  const XLSX = ensureXlsxLoaded();
+  const method = state.settings.pnlMethod || PNL_METHODS.AVERAGE;
+  const items = getFilteredTradesWithMetrics();
+  const raw = items.map(({ metrics, ...trade }) => trade);
+  const summary = summarizeJournal(raw, method);
+  const workbook = XLSX.utils.book_new();
+  const summarySheetRows = [
+    ['Metric', 'Value'],
+    ['Trade Count', summary.tradeCount],
+    ['Closed Trades', summary.closedTradeCount],
+    ['Open Trades', summary.openTradeCount],
+    ['Win %', round(summary.winRate, 2)],
+    ['Loss %', round(summary.lossRate, 2)],
+    ['Win Size', round(summary.grossProfit || 0)],
+    ['Loss Size', round(Math.abs(summary.grossLossAbs || 0))],
+    ['Avg Win Size', round(summary.avgWin || 0)],
+    ['Avg Loss Size', round(Math.abs(summary.avgLossAbs || 0))],
+    ['Avg Win Holding Minutes', round(summary.avgWinHoldMinutes || 0, 2)],
+    ['Avg Loss Holding Minutes', round(summary.avgLossHoldMinutes || 0, 2)],
+    ['Avg Dip Before Move %', summary.avgDipBeforeMove ?? ''],
+    ['Avg Winner Dip %', summary.avgWinDipBeforeMove ?? ''],
+    ['Avg Loser Dip %', summary.avgLossDipBeforeMove ?? ''],
+    ['Winner Dip 80 %', summary.winnerDipP80 ?? ''],
+    ['Open Risk Now', round(summary.currentOpenRisk || 0)],
+    ['Peak Open Risk', round(summary.peakOpenRisk || 0)],
+  ];
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summarySheetRows), 'Summary');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(toCsvRows(raw, method)), 'Trades');
+  const fillRows = buildTradeFillExportRows(raw);
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(fillRows.length ? fillRows : [{ Info: 'No fills in current filtered journal scope.' }]), 'Fills');
+  XLSX.writeFile(workbook, `trademaster-journal-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportWinnerCsv() {
+  const exportData = buildWinnerExportData(getRenderableWinners());
+  downloadCsvFromRows(`trademaster-winners-${new Date().toISOString().slice(0, 10)}.csv`, exportData.winners);
+}
+
+function exportWinnerExcel() {
+  const XLSX = ensureXlsxLoaded();
+  const items = getRenderableWinners();
+  const summary = summarizeWinnerEntries(items);
+  const exportData = buildWinnerExportData(items);
+  const workbook = XLSX.utils.book_new();
+  const summaryRows = [
+    ['Metric', 'Value'],
+    ['Records', summary.count],
+    ['Unique Stocks', summary.uniqueStocks],
+    ['Avg Total Move %', summary.avgMove ?? ''],
+    ['Avg Initial Move %', summary.avgInitialMove ?? ''],
+    ['Avg Dip Before Move %', summary.avgDipBeforeMove ?? ''],
+    ['Winner Dip 80 %', summary.dipP80 ?? ''],
+    ['Avg Cycle Days', summary.avgMoveDays ?? ''],
+    ['Avg Moves / Stock', summary.avgMoveCount ?? ''],
+    ['Avg Expansions / Stock', summary.avgExpansionCount ?? ''],
+    ['Avg Bases / Stock', summary.avgBaseCount ?? ''],
+    ['Avg Expansion %', summary.avgExpansion ?? ''],
+    ['Avg Best Expansion %', summary.avgMaxExpansion ?? ''],
+    ['Avg Expansion Length', summary.avgExpansionLength ?? ''],
+    ['Avg Major Base Length', summary.avgMajorBaseLength ?? ''],
+    ['Major Base Depth 80 %', summary.majorBaseDepthP80 ?? ''],
+    ['Avg Expansion Base Length', summary.avgExpansionBaseLength ?? ''],
+    ['Expansion Base Depth 80 %', summary.expansionBaseDepthP80 ?? ''],
+    ['Avg Stage 4 Decline %', summary.avgStage4Decline ?? ''],
+  ];
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.winners.length ? exportData.winners : [{ Info: 'No filtered winner records.' }]), 'Winners');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.moves.length ? exportData.moves : [{ Info: 'No move rows in current filter.' }]), 'Moves');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.expansions.length ? exportData.expansions : [{ Info: 'No expansion rows in current filter.' }]), 'Expansions');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData.bases.length ? exportData.bases : [{ Info: 'No base rows in current filter.' }]), 'Bases');
+  XLSX.writeFile(workbook, `trademaster-winner-db-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function renderAssistantResult(target, result) {
+  if (!target) return;
+  if (!result) {
+    target.textContent = 'No assistant answer yet.';
+    return;
+  }
+  if (!result.ok) {
+    target.innerHTML = `
+      <div class="text-strong">${escapeHtml(result.title || 'Could not answer')}</div>
+      ${(result.details || []).length ? `<ul class="deploy-list compact-top">${result.details.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+    `;
+    return;
+  }
+  target.innerHTML = `
+    <div class="text-strong">${escapeHtml(result.title || 'Answer')}</div>
+    <div class="metric-value ${result.tone === 'positive' ? 'positive' : result.tone === 'negative' ? 'negative' : ''}">${escapeHtml(result.answer || '—')}</div>
+    ${(result.details || []).length ? `<ul class="deploy-list compact-top">${result.details.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+  `;
+}
+
+function runJournalAssistant() {
+  if (!refs.journalAssistantAnswer) return;
+  const question = refs.journalAssistantInput?.value?.trim() || '';
+  if (!question) {
+    refs.journalAssistantAnswer.textContent = 'Uses the current filtered journal scope.';
+    return;
+  }
+  const items = getFilteredTradesWithMetrics();
+  const raw = items.map(({ metrics, ...trade }) => trade);
+  const summary = summarizeJournal(raw, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const result = answerJournalQuestion(question, items, summary, { currency: getCurrency() });
+  renderAssistantResult(refs.journalAssistantAnswer, result);
+}
+
+function runWinnerAssistant() {
+  if (!refs.winnerAssistantAnswer) return;
+  const question = refs.winnerAssistantInput?.value?.trim() || '';
+  if (!question) {
+    refs.winnerAssistantAnswer.textContent = 'Uses the current filtered Winner DB scope.';
+    return;
+  }
+  const items = getRenderableWinners();
+  const summary = summarizeWinnerEntries(items);
+  const flat = flattenWinnerObservations(items);
+  const result = answerWinnerQuestion(question, items, summary, flat, { currency: getCurrency() });
+  renderAssistantResult(refs.winnerAssistantAnswer, result);
+}
+
+function refreshAssistants() {
+  runJournalAssistant();
+  runWinnerAssistant();
 }
 
 async function handleDeleteTrade(tradeId) {
@@ -2422,7 +2617,36 @@ function bindToolbarEvents() {
   });
   refs.mbiClearHistoryBtn?.addEventListener('click', clearMbiHistory);
   $('#exportCsvBtn').addEventListener('click', exportCsv);
+  $('#exportExcelBtn')?.addEventListener('click', exportJournalExcel);
   $('#exportJsonBtn').addEventListener('click', exportJson);
+  $('#exportWinnerCsvBtn')?.addEventListener('click', exportWinnerCsv);
+  $('#exportWinnerExcelBtn')?.addEventListener('click', exportWinnerExcel);
+  refs.askJournalAssistantBtn?.addEventListener('click', runJournalAssistant);
+  refs.askWinnerAssistantBtn?.addEventListener('click', runWinnerAssistant);
+  refs.journalAssistantInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      runJournalAssistant();
+    }
+  });
+  refs.winnerAssistantInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      runWinnerAssistant();
+    }
+  });
+  $$('[data-assistant-scope="journal"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (refs.journalAssistantInput) refs.journalAssistantInput.value = button.dataset.prompt || '';
+      runJournalAssistant();
+    });
+  });
+  $$('[data-assistant-scope="winner"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (refs.winnerAssistantInput) refs.winnerAssistantInput.value = button.dataset.prompt || '';
+      runWinnerAssistant();
+    });
+  });
   refs.copyCoachPromptBtn?.addEventListener('click', async () => {
     const prompt = state.ui.lastCoachPrompt || buildAiCoachReport(getFilteredTradesRaw(), state.settings.pnlMethod || PNL_METHODS.AVERAGE).promptText;
     if (!prompt) {
@@ -2495,10 +2719,12 @@ function bindToolbarEvents() {
     $(selector).addEventListener('input', (event) => {
       state.winnerFilters[key] = event.target.value;
       renderWinnerSummary();
+      runWinnerAssistant();
     });
     $(selector).addEventListener('change', (event) => {
       state.winnerFilters[key] = event.target.value;
       renderWinnerSummary();
+      runWinnerAssistant();
     });
   };
 

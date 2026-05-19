@@ -596,3 +596,207 @@ export function summarizeWinnerEntries(entries = []) {
     expansionLengthSampleCount: entries.filter((entry) => effectiveMetric(entry, 'avgExpansionLength') != null).length,
   };
 }
+
+export function winnerMajorBaseLabel(moveIndexZeroBased = 0) {
+  return moveIndexZeroBased === 0 ? 'BASE BEFORE MOVE' : `B${moveIndexZeroBased}`;
+}
+
+export function winnerExpansionBaseLabel(moveIndexZeroBased = 0, expansionIndexZeroBased = 0) {
+  return moveIndexZeroBased === 0
+    ? `E${expansionIndexZeroBased + 1}B`
+    : `E${expansionIndexZeroBased + 1}B${moveIndexZeroBased}`;
+}
+
+export function flattenWinnerObservations(entries = []) {
+  const normalizedEntries = (Array.isArray(entries) ? entries : []).map((entry) => normalizeWinnerPayload(entry));
+  const moves = [];
+  const expansions = [];
+  const bases = [];
+
+  normalizedEntries.forEach((entry) => {
+    (entry.moves || []).forEach((move, moveIndex) => {
+      const majorLabel = winnerMajorBaseLabel(moveIndex);
+      moves.push({
+        stockName: entry.stockName,
+        sector: entry.sector,
+        type: entry.type,
+        setup: entry.setup,
+        timeframe: entry.timeframe,
+        breakoutDate: entry.breakoutDate,
+        moveNumber: moveIndex + 1,
+        moveLabel: `Move ${moveIndex + 1}`,
+        movePct: move.movePct ?? move.autoMovePct ?? null,
+        moveDays: move.moveDays ?? move.autoMoveDays ?? null,
+        tags: (move.tags || []).join('|'),
+        notes: move.notes || '',
+        majorBaseLabel: majorLabel,
+        majorBaseLength: move.preMoveBase?.length ?? null,
+        majorBaseDepth: move.preMoveBase?.depth ?? null,
+        majorBaseTags: (move.preMoveBase?.tags || []).join('|'),
+        majorBaseNotes: move.preMoveBase?.notes || '',
+      });
+
+      if (baseHasAnyContent(move.preMoveBase || {})) {
+        bases.push({
+          stockName: entry.stockName,
+          sector: entry.sector,
+          type: entry.type,
+          setup: entry.setup,
+          timeframe: entry.timeframe,
+          breakoutDate: entry.breakoutDate,
+          kind: 'MAJOR',
+          label: majorLabel,
+          moveNumber: moveIndex + 1,
+          expansionNumber: null,
+          length: move.preMoveBase?.length ?? null,
+          depth: move.preMoveBase?.depth ?? null,
+          tags: (move.preMoveBase?.tags || []).join('|'),
+          notes: move.preMoveBase?.notes || '',
+        });
+      }
+
+      (move.expansions || []).forEach((expansion, expansionIndex) => {
+        const expansionLabel = `E${expansionIndex + 1}`;
+        const baseLabel = winnerExpansionBaseLabel(moveIndex, expansionIndex);
+        expansions.push({
+          stockName: entry.stockName,
+          sector: entry.sector,
+          type: entry.type,
+          setup: entry.setup,
+          timeframe: entry.timeframe,
+          breakoutDate: entry.breakoutDate,
+          moveNumber: moveIndex + 1,
+          moveLabel: `Move ${moveIndex + 1}`,
+          expansionNumber: expansionIndex + 1,
+          label: expansionLabel,
+          pct: expansion.pct ?? null,
+          length: expansion.length ?? null,
+          tags: (expansion.tags || []).join('|'),
+          notes: expansion.notes || '',
+          baseLabel,
+          baseLength: expansion.base?.length ?? null,
+          baseDepth: expansion.base?.depth ?? null,
+          baseTags: (expansion.base?.tags || []).join('|'),
+          baseNotes: expansion.base?.notes || '',
+        });
+
+        if (baseHasAnyContent(expansion.base || {})) {
+          bases.push({
+            stockName: entry.stockName,
+            sector: entry.sector,
+            type: entry.type,
+            setup: entry.setup,
+            timeframe: entry.timeframe,
+            breakoutDate: entry.breakoutDate,
+            kind: 'EXPANSION',
+            label: baseLabel,
+            moveNumber: moveIndex + 1,
+            expansionNumber: expansionIndex + 1,
+            length: expansion.base?.length ?? null,
+            depth: expansion.base?.depth ?? null,
+            tags: (expansion.base?.tags || []).join('|'),
+            notes: expansion.base?.notes || '',
+          });
+        }
+      });
+    });
+  });
+
+  return { moves, expansions, bases };
+}
+
+export function buildWinnerExportData(entries = []) {
+  const normalizedEntries = (Array.isArray(entries) ? entries : []).map((entry) => normalizeWinnerPayload(entry));
+  const flat = flattenWinnerObservations(normalizedEntries);
+
+  const winners = normalizedEntries.map((entry) => ({
+    'Stock Name': entry.stockName,
+    Sector: entry.sector,
+    Type: entry.type,
+    Setup: entry.setup,
+    Timeframe: entry.timeframe,
+    'Breakout Date': entry.breakoutDate,
+    Period: entry.period,
+    'SuperMBI': entry.mbiScore,
+    'Initial Move %': entry.effectiveInitialMove,
+    'Dip Before Move %': entry.dipBeforeMove,
+    'Total Move %': entry.effectiveMove,
+    'Total Cycle Days': entry.pattern?.totalMoveDaysAuto ?? null,
+    'Stage 4 Decline %': entry.stage4Decline,
+    Circuits: entry.circuits,
+    'Move Count': entry.pattern?.moveCount ?? 0,
+    'Expansion Count': entry.pattern?.totalExpansions ?? 0,
+    'Base Count': entry.pattern?.totalBases ?? 0,
+    'Avg Expansion %': entry.pattern?.avgExpansion ?? null,
+    'Best Expansion %': entry.pattern?.maxExpansion ?? null,
+    'Avg Expansion Length': entry.pattern?.avgExpansionLength ?? null,
+    'Best Expansion Length': entry.pattern?.maxExpansionLength ?? null,
+    'Major Base Length': entry.pattern?.maxMajorBaseLength ?? null,
+    'Major Base Depth %': entry.pattern?.maxMajorBaseDepth ?? null,
+    'Expansion Base Length': entry.pattern?.maxExpansionBaseLength ?? null,
+    'Expansion Base Depth %': entry.pattern?.maxExpansionBaseDepth ?? null,
+    Tags: (entry.tags || []).join('|'),
+    Notes: entry.notes || '',
+    'Image URL': entry.imageUrl || '',
+  }));
+
+  const moves = flat.moves.map((row) => ({
+    'Stock Name': row.stockName,
+    Sector: row.sector,
+    Type: row.type,
+    Setup: row.setup,
+    Timeframe: row.timeframe,
+    'Breakout Date': row.breakoutDate,
+    'Move #': row.moveNumber,
+    'Move Label': row.moveLabel,
+    'Move %': row.movePct,
+    'Move Days': row.moveDays,
+    'Major Base Label': row.majorBaseLabel,
+    'Major Base Length': row.majorBaseLength,
+    'Major Base Depth %': row.majorBaseDepth,
+    'Move Tags': row.tags,
+    'Move Notes': row.notes,
+    'Major Base Tags': row.majorBaseTags,
+    'Major Base Notes': row.majorBaseNotes,
+  }));
+
+  const expansions = flat.expansions.map((row) => ({
+    'Stock Name': row.stockName,
+    Sector: row.sector,
+    Type: row.type,
+    Setup: row.setup,
+    Timeframe: row.timeframe,
+    'Breakout Date': row.breakoutDate,
+    'Move #': row.moveNumber,
+    'Expansion #': row.expansionNumber,
+    Label: row.label,
+    'Expansion %': row.pct,
+    'Expansion Length': row.length,
+    'Expansion Tags': row.tags,
+    'Expansion Notes': row.notes,
+    'Base Label': row.baseLabel,
+    'Base Length': row.baseLength,
+    'Base Depth %': row.baseDepth,
+    'Base Tags': row.baseTags,
+    'Base Notes': row.baseNotes,
+  }));
+
+  const bases = flat.bases.map((row) => ({
+    'Stock Name': row.stockName,
+    Sector: row.sector,
+    Type: row.type,
+    Setup: row.setup,
+    Timeframe: row.timeframe,
+    'Breakout Date': row.breakoutDate,
+    'Base Type': row.kind,
+    Label: row.label,
+    'Move #': row.moveNumber,
+    'Expansion #': row.expansionNumber,
+    Length: row.length,
+    'Depth %': row.depth,
+    Tags: row.tags,
+    Notes: row.notes,
+  }));
+
+  return { winners, moves, expansions, bases };
+}

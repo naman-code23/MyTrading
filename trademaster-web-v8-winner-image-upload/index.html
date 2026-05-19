@@ -326,6 +326,7 @@
               <button id="importTradebookBtn" class="btn btn-ghost">Import tradebook CSV</button>
               <input id="importTradebookInput" type="file" accept=".csv,text/csv" class="hidden" />
               <button id="exportCsvBtn" class="btn btn-ghost">Export CSV</button>
+              <button id="exportExcelBtn" class="btn btn-ghost">Export Excel</button>
               <button id="exportJsonBtn" class="btn btn-ghost">Export JSON</button>
               <button id="openTradeModalBtn" class="btn btn-primary">+ New trade</button>
             </div>
@@ -442,6 +443,24 @@
           <div id="journalStatsCards" class="stats-grid compact-top"></div>
         </div>
 
+        <div class="panel compact-top">
+          <div class="section-row">
+            <div>
+              <div class="section-title">Journal Assistant</div>
+              <p class="section-copy">Ask questions about the current filtered journal scope. Good for quick checks like hold time, dip, open risk, and win/loss size.</p>
+            </div>
+            <button id="askJournalAssistantBtn" class="btn btn-primary">Ask</button>
+          </div>
+          <label class="field compact-top"><span>Question</span><input id="journalAssistantInput" type="text" placeholder="What is avg loss holding period?" /></label>
+          <div class="toolbar-actions compact-top stretch-mobile">
+            <button type="button" class="btn btn-ghost" data-assistant-scope="journal" data-prompt="What is avg win size?">Avg win size</button>
+            <button type="button" class="btn btn-ghost" data-assistant-scope="journal" data-prompt="What is avg loss holding period?">Avg loss hold</button>
+            <button type="button" class="btn btn-ghost" data-assistant-scope="journal" data-prompt="What is open risk now?">Open risk now</button>
+            <button type="button" class="btn btn-ghost" data-assistant-scope="journal" data-prompt="What is avg dip before move for winners?">Winner dip</button>
+          </div>
+          <div id="journalAssistantAnswer" class="panel-note compact-top">Uses the current filtered journal scope.</div>
+        </div>
+
         <div id="journalTable" class="trade-table-wrap"></div>
       </section>
 
@@ -552,7 +571,11 @@
               <div class="section-title">Winner Database</div>
               <p class="section-copy">Build your personal database of monster winners so you can study the best bases, biggest moves, stage-4 declines, and the regimes that deserve your biggest size.</p>
             </div>
-            <button id="openWinnerModalBtn" class="btn btn-primary">+ Add winner</button>
+            <div class="toolbar-actions stretch-mobile">
+              <button id="exportWinnerCsvBtn" class="btn btn-ghost">Export CSV</button>
+              <button id="exportWinnerExcelBtn" class="btn btn-ghost">Export Excel</button>
+              <button id="openWinnerModalBtn" class="btn btn-primary">+ Add winner</button>
+            </div>
           </div>
           <div class="toolbar-grid winner-filter-grid compact-top">
             <label class="field"><span>Search</span><input id="winnerSearchInput" type="search" placeholder="Stock, sector, setup, tags, notes" /></label>
@@ -584,6 +607,24 @@
           <div id="winnerFilterSummary" class="panel-note compact-top">Study only the best historical winners that match your current focus.</div>
           <div id="winnerSummaryCards" class="stats-grid compact-top"></div>
           <div id="winnerPatternAnalysis" class="compact-top"></div>
+        </div>
+
+        <div class="panel compact-top">
+          <div class="section-row">
+            <div>
+              <div class="section-title">Winner DB Assistant</div>
+              <p class="section-copy">Ask about the current filtered winner database. It understands questions about moves, expansions, bases, lengths, depths, and cycle timing.</p>
+            </div>
+            <button id="askWinnerAssistantBtn" class="btn btn-primary">Ask</button>
+          </div>
+          <label class="field compact-top"><span>Question</span><input id="winnerAssistantInput" type="text" placeholder="What is avg E1 length?" /></label>
+          <div class="toolbar-actions compact-top stretch-mobile">
+            <button type="button" class="btn btn-ghost" data-assistant-scope="winner" data-prompt="What is avg E1 length?">Avg E1 length</button>
+            <button type="button" class="btn btn-ghost" data-assistant-scope="winner" data-prompt="What is avg base length?">Avg base length</button>
+            <button type="button" class="btn btn-ghost" data-assistant-scope="winner" data-prompt="What is avg E1B depth?">Avg E1B depth</button>
+            <button type="button" class="btn btn-ghost" data-assistant-scope="winner" data-prompt="What is avg Move 2 %?">Avg Move 2 %</button>
+          </div>
+          <div id="winnerAssistantAnswer" class="panel-note compact-top">Uses the current filtered Winner DB scope.</div>
         </div>
         <div id="winnerTable" class="trade-table-wrap"></div>
       </section>
@@ -771,6 +812,7 @@
 
   <script src="./js/config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

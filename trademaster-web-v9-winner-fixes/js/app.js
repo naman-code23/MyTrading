@@ -5,8 +5,6 @@ import {
   summarizeJournal,
   buildEquityCurve,
   groupMonthlyPnl,
-  groupPnlByField,
-  weekdayBreakdown,
   normalizeTradePayload,
   filterTrades,
   sortTrades,
@@ -15,12 +13,11 @@ import {
   toCsvRows,
 } from './trade-engine.js';
 import { solvePositionCalculator, projectTarget, lockedPnl } from './calc.js';
-import { calculateMbi, buildSellChecklist, quickSellCalculator, calculateSuperMbiHistoryFromText } from './mbi.js';
 import { createChartManager } from './charts.js';
-import { buildAiCoachReport } from './ai-coach.js';
 import { importTradebookCsv } from './tradebook-importer.js';
 import { formatBytes, prepareImageForUpload, revokePreparedPreview } from './image-tools.js';
 import {
+  createLinkedWinnerDraft,
   normalizeWinnerPayload,
   normalizeWinnerMoves,
   summarizeWinnerPattern,
@@ -34,7 +31,6 @@ import {
   deepClone,
   downloadTextFile,
   escapeHtml,
-  formatCompactCurrency,
   formatCurrency,
   formatDate,
   formatDateTime,
@@ -52,127 +48,66 @@ const state = {
   storage: null,
   mode: 'demo',
   user: null,
+  sessionEpoch: 0,
   settings: { ...defaultSettings },
   trades: [],
   winners: [],
   unsubTrades: null,
   unsubWinners: null,
   filters: {
-    search: '',
-    periodPreset: 'ALL',
-    status: 'ALL',
-    direction: 'ALL',
-    result: 'ALL',
-    timeframe: 'ALL',
-    strategy: 'ALL',
-    minMbi: '',
-    lossWorseThan: '',
-    minAbsMove: '',
-    maxDipBeforeMove: '',
-    sort: 'DATE_DESC',
-    fromDate: '',
-    toDate: '',
+    search: '', periodPreset: 'ALL', status: 'ALL', direction: 'ALL', result: 'ALL',
+    timeframe: 'ALL', strategy: 'ALL', lossWorseThan: '', minAbsMove: '', maxDipBeforeMove: '',
+    sort: 'DATE_DESC', fromDate: '', toDate: '',
   },
   winnerFilters: {
-    search: '',
-    sector: 'ALL',
-    type: 'ALL',
-    setup: 'ALL',
-    timeframe: 'ALL',
-    period: 'ALL',
-    minMove: '',
-    minInitialMove: '',
-    maxDipBeforeMove: '',
-    maxStage4Decline: '',
-    minMbi: '',
-    minMoveCount: '',
-    minBaseCount: '',
-    minAvgExpansion: '',
-    minMaxExpansion: '',
-    minBiggestBaseLength: '',
-    maxDeepestBase: '',
-    hasImage: 'ALL',
-    sort: 'DATE_DESC',
-    fromDate: '',
-    toDate: '',
+    search: '', sector: 'ALL', type: 'ALL', setup: 'ALL', timeframe: 'ALL', period: 'ALL',
+    minMove: '', minInitialMove: '', maxDipBeforeMove: '', maxStage4Decline: '',
+    minMoveCount: '', minBaseCount: '', minAvgExpansion: '', minMaxExpansion: '',
+    minBiggestBaseLength: '', maxDeepestBase: '', hasImage: 'ALL', sort: 'DATE_DESC',
   },
   ui: {
-    activeTab: 'dashboard',
-    toastTimer: null,
-    lastImportSummary: null,
-    lastCoachPrompt: '',
-    mbiHistoryRows: [],
-    mbiHistorySource: '',
-    lastMbiImportSummary: null,
-    winnerImageDraft: null,
+    activeTab: 'calculator', toastTimer: null, lastImportSummary: null,
+    winnerImageDraft: null, tradeDraft: null, winnerDraft: null,
   },
 };
 
 const refs = {};
 let modalTradeSnapshot = null;
+let modalWinnerSnapshot = null;
 
 function initRefs() {
-  refs.signInBtn = $('#signInBtn');
-  refs.signOutBtn = $('#signOutBtn');
-  refs.modeBadge = $('#modeBadge');
-  refs.userSummary = $('#userSummary');
-  refs.summaryCards = $('#summaryCards');
-  refs.dashboardFilterSummary = $('#dashboardFilterSummary');
-  refs.dashboardInsightCards = $('#dashboardInsightCards');
-  refs.dashboardInsights = $('#dashboardInsights');
-  refs.recentTrades = $('#recentTrades');
-  refs.journalTable = $('#journalTable');
-  refs.journalFilterSummary = $('#journalFilterSummary');
-  refs.journalStatsCards = $('#journalStatsCards');
-  refs.journalStatsNote = $('#journalStatsNote');
-  refs.tradeModal = $('#tradeModal');
-  refs.tradeForm = $('#tradeForm');
-  refs.tradeModalTitle = $('#tradeModalTitle');
-  refs.toast = $('#toast');
-  refs.fillsContainer = $('#fillsContainer');
-  refs.tradeMetricsPreview = $('#tradeMetricsPreview');
-  refs.strategyFilter = $('#strategyFilter');
-  refs.duplicateTradeBtn = $('#duplicateTradeBtn');
-  refs.deleteTradeBtn = $('#deleteTradeBtn');
-  refs.importTradebookBtn = $('#importTradebookBtn');
-  refs.importTradebookInput = $('#importTradebookInput');
-  refs.importSummary = $('#importSummary');
-  refs.resetCalcBtn = $('#resetCalcBtn');
-  refs.pushCalcToTradeBtn = $('#pushCalcToTradeBtn');
-  refs.copyCoachPromptBtn = $('#copyCoachPromptBtn');
-  refs.coachVerdict = $('#coachVerdict');
-  refs.coachSummary = $('#coachSummary');
-  refs.coachScorePill = $('#coachScorePill');
-  refs.coachMetaCards = $('#coachMetaCards');
-  refs.coachStrengths = $('#coachStrengths');
-  refs.coachLeaks = $('#coachLeaks');
-  refs.coachActions = $('#coachActions');
-  refs.coachPatternCards = $('#coachPatternCards');
-  refs.mbiImportBtn = $('#mbiImportBtn');
-  refs.mbiHistoryInput = $('#mbiHistoryInput');
-  refs.mbiApplyTextareaBtn = $('#mbiApplyTextareaBtn');
-  refs.mbiClearHistoryBtn = $('#mbiClearHistoryBtn');
-  refs.mbiHistoryText = $('#mbiHistoryText');
-  refs.mbiHistoryMeta = $('#mbiHistoryMeta');
-  refs.mbiHistoryTable = $('#mbiHistoryTable');
-  refs.winnerTable = $('#winnerTable');
-  refs.winnerSummaryCards = $('#winnerSummaryCards');
-  refs.winnerFilterSummary = $('#winnerFilterSummary');
-  refs.winnerSectorFilter = $('#winnerSectorFilter');
-  refs.winnerTypeFilter = $('#winnerTypeFilter');
-  refs.winnerSetupFilter = $('#winnerSetupFilter');
-  refs.winnerPeriodFilter = $('#winnerPeriodFilter');
-  refs.winnerModal = $('#winnerModal');
-  refs.winnerForm = $('#winnerForm');
-  refs.winnerModalTitle = $('#winnerModalTitle');
-  refs.deleteWinnerBtn = $('#deleteWinnerBtn');
-  refs.winnerImagePreview = $('#winnerImagePreview');
-  refs.winnerImageFile = $('#winnerImageFile');
-  refs.pickWinnerImageBtn = $('#pickWinnerImageBtn');
-  refs.clearWinnerImageBtn = $('#clearWinnerImageBtn');
-  refs.winnerMovesBuilder = $('#winnerMovesBuilder');
-  refs.winnerMovesSummary = $('#winnerMovesSummary');
-  refs.addWinnerMoveBtn = $('#addWinnerMoveBtn');
+  for (const id of [
+    'mainTabs', 'signInBtn', 'phoneSignInBtn', 'twitterSignInBtn', 'signOutBtn', 'authStatus', 'accountMenuBtn', 'accountSignOutBtn',
+    'accountModal', 'accountModalCopy', 'closeAccountModalBtn', 'openAccountFromJournalBtn',
+    'settingsPnlMethod', 'settingsCurrency', 'saveSettingsBtn', 'settingsSaveStatus',
+    'backupDriveBtn', 'restoreDriveBtn', 'importJsonBtn', 'importJsonInput',
+    'phoneAuthModal', 'phoneAuthForm', 'phoneAuthTitle', 'phoneNumberStep', 'phoneCodeStep',
+    'phoneNumberInput', 'phoneCodeInput', 'requestPhoneCodeBtn', 'confirmPhoneCodeBtn',
+    'closePhoneAuthBtn', 'restartPhoneAuthBtn', 'phoneAuthStatus', 'journalAccessNotice',
+    'winnerAccessNotice', 'journalSummaryCards', 'journalStatsCards', 'journalStatsNote',
+    'journalFilterSummary', 'importSummary', 'journalChartsEmpty', 'journalPerformanceDetails',
+    'journalTable', 'equityChart', 'monthlyChart', 'strategyFilter', 'openTradeModalBtn', 'importTradebookBtn', 'importTradebookInput',
+    'exportCsvBtn', 'exportJsonBtn', 'tradeModal', 'tradeForm', 'tradeModalTitle', 'closeTradeModalBtn',
+    'tradeId', 'tradeSymbol', 'tradeDirection', 'tradeTimeframe', 'tradeStrategy', 'tradePlannedRisk',
+    'tradePlannedStop', 'tradeDipBeforeMove', 'tradeTags', 'tradeNotes', 'fillsContainer',
+    'addBuyFillBtn', 'addSellFillBtn', 'tradeMetricsPreview', 'tradeSaveStatus', 'saveTradeBtn',
+    'duplicateTradeBtn', 'deleteTradeBtn', 'winnerTable', 'winnerSummaryCards', 'winnerFilterSummary',
+    'winnerSectorFilter', 'winnerTypeFilter', 'winnerSetupFilter', 'winnerTimeframeFilter',
+    'winnerPeriodFilter', 'winnerHasImageFilter', 'winnerSortSelect', 'openWinnerModalBtn',
+    'winnerModal', 'winnerForm', 'winnerModalTitle', 'winnerId', 'winnerStockName', 'winnerSector',
+    'winnerType', 'winnerSetup', 'winnerTimeframe', 'winnerBreakoutDate', 'winnerCircuits',
+    'winnerPeriod', 'winnerInitialMove', 'winnerBaseLength', 'winnerMove', 'winnerDipBeforeMove',
+    'winnerStage4Decline', 'winnerImageUrl', 'winnerImageStoragePath', 'winnerTags', 'winnerNotes',
+    'winnerSourceTradeSection', 'winnerImagePreview', 'winnerImageFile', 'pickWinnerImageBtn',
+    'clearWinnerImageBtn', 'winnerMovesBuilder', 'winnerMovesSummary', 'addWinnerMoveBtn',
+    'winnerSaveStatus', 'saveWinnerBtn', 'deleteWinnerBtn', 'closeWinnerModalBtn', 'imagePreviewModal',
+    'imagePreview', 'imagePreviewTitle', 'closeImagePreviewBtn', 'resetCalcBtn', 'pushCalcToTradeBtn',
+    'calcCapital', 'calcRiskPercent', 'calcEntry', 'calcSlPrice', 'calcLastEdited', 'calcSlPercent',
+    'calcPositionSize', 'calcRiskAmount', 'calcTrailPrice', 'calcQty', 'calcValue', 'calcActualRisk',
+    'calcPositionPercent', 'calcRiskCapitalPercent', 'calcTrailLocked', 'calcDirectionPill', 'calcHint',
+    'targetR', 'targetPercent', 'targetExitPrice', 'targetPnl', 'targetNetPnl', 'chargesBrokerage',
+    'chargesStt', 'chargesOther', 'chargesTotal', 'toast',
+  ]) refs[id] = $(`#${id}`);
 }
 
 function showToast(message, kind = 'info') {
@@ -180,7 +115,40 @@ function showToast(message, kind = 'info') {
   refs.toast.className = cn('toast', kind === 'error' && 'pill-red', kind === 'success' && 'pill-green');
   refs.toast.classList.remove('hidden');
   clearTimeout(state.ui.toastTimer);
-  state.ui.toastTimer = setTimeout(() => refs.toast.classList.add('hidden'), 2600);
+  state.ui.toastTimer = setTimeout(() => refs.toast.classList.add('hidden'), 3200);
+}
+
+function friendlyError(error, fallback = 'Something went wrong.') {
+  const code = String(error?.code || '').replace(/^firebase\//, '');
+  const messages = {
+    'auth/popup-closed-by-user': 'Sign-in was cancelled. You can try again when ready.',
+    'auth/unauthorized-domain': 'This web address is not authorized in Firebase Authentication. Add the current Hosting domain in Firebase Console.',
+    'auth/operation-not-allowed': 'This sign-in method is not enabled in Firebase Authentication.',
+    'auth/quota-exceeded': 'Firebase has reached an authentication quota. Try again later or use a configured test number.',
+    'auth/invalid-phone-number': 'Enter a valid phone number with country code.',
+    'auth/invalid-verification-code': 'That verification code is not valid. Check it and try again.',
+    'permission-denied': 'Firebase denied this account action. Check the signed-in account and deployed rules.',
+    'storage/unauthorized': 'Firebase Storage denied this screenshot action. Check the signed-in account and Storage rules.',
+    'storage/unknown': 'Firebase Storage could not complete the screenshot action. Check the connection and try again.',
+    'storage/canceled': 'The screenshot upload was cancelled. The prepared image is still available to retry.',
+    'unavailable': 'Firebase is temporarily unavailable. Check the connection and retry; the form is still open.',
+    'deadline-exceeded': 'Firebase did not confirm this operation in time. The result is uncertain; retry only after checking the record.',
+    'network-request-failed': 'The network request failed. Check the connection and retry; your form is still open.',
+  };
+  const message = messages[code] || error?.message || fallback;
+  return code && !message.includes(code) ? `${message} (Code: ${code})` : message;
+}
+
+function setFormStatus(ref, message = '', kind = '') {
+  if (!ref) return;
+  ref.textContent = message;
+  ref.className = cn('form-status', kind && `form-status-${kind}`);
+  if (kind) ref.dataset.state = kind;
+  else delete ref.dataset.state;
+}
+
+function isPrivateDataAvailable() {
+  return state.mode === 'demo' || Boolean(state.user);
 }
 
 function getCurrency() {
@@ -197,131 +165,70 @@ function clearWinnerImageDraft() {
   if (refs.winnerImageFile) refs.winnerImageFile.value = '';
 }
 
-function winnerImageEmptyState() {
-  if (canUploadWinnerImages()) {
-    return 'Upload a screenshot or paste an external image URL.';
-  }
-  return 'Paste an external image URL, or enable Firebase Storage in cloud mode to upload screenshots directly.';
-}
-
-function requireCloudAuth() {
-  return state.mode === 'demo' || Boolean(state.user);
-}
-
-function isPresent(value) {
-  return value != null && value !== '';
-}
-
-function hasWinnerContent(entry = {}, pendingImage = null) {
-  return Boolean(
-    entry.stockName
-    || entry.sector
-    || entry.type
-    || entry.setup
-    || entry.period
-    || entry.breakoutDate
-    || entry.imageUrl
-    || entry.imageStoragePath
-    || entry.notes
-    || (entry.tags || []).length
-    || isPresent(entry.circuits)
-    || isPresent(entry.initialMove)
-    || isPresent(entry.baseLength)
-    || isPresent(entry.move)
-    || isPresent(entry.dipBeforeMove)
-    || isPresent(entry.stage4Decline)
-    || isPresent(entry.mbiScore)
-    || (entry.moves || []).length
-    || pendingImage,
-  );
-}
-
 function looksLikeViewableImageUrl(value = '') {
-  return /^(https?:\/\/|data:image\/|blob:)/i.test(String(value).trim());
+  return /^(https?:\/\/|data:image\/|blob:|\/|\.\/|\.\.\/)/i.test(String(value).trim());
+}
+
+function winnerImageEmptyState() {
+  return canUploadWinnerImages()
+    ? 'Choose a screenshot or paste an external image URL.'
+    : 'Paste an external image URL. Firebase Storage uploads are available after any Firebase sign-in.';
 }
 
 function switchTab(tabName) {
+  if (!['calculator', 'journal', 'winners'].includes(tabName)) return;
   state.ui.activeTab = tabName;
-  $$('.tab').forEach((button) => button.classList.toggle('active', button.dataset.tab === tabName));
+  $$('.tab').forEach((button) => { const active = button.dataset.tab === tabName; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); });
   $$('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === `tab-${tabName}`));
   requestAnimationFrame(() => renderCharts());
 }
 
-function updateModeBadge() {
-  if (state.mode === 'demo') {
-    refs.modeBadge.className = 'pill pill-amber';
-    refs.modeBadge.textContent = 'Demo mode • local only';
-    return;
-  }
-  if (state.user) {
-    refs.modeBadge.className = 'pill pill-green';
-    refs.modeBadge.textContent = 'Cloud mode • Firestore live';
-    return;
-  }
-  refs.modeBadge.className = 'pill pill-blue';
-  refs.modeBadge.textContent = 'Cloud mode • sign in needed';
-}
-
 function updateUserSummary() {
-  const name = state.user?.displayName || (state.mode === 'demo' ? 'Demo Mode' : 'Signed out');
-  const meta = state.user?.email || (state.mode === 'demo' ? 'Working from localStorage until you add Firebase config.' : 'Connect Google authentication to start syncing.');
-  const initials = name
-    .split(' ')
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('') || 'TM';
-
-  refs.userSummary.innerHTML = `
-    <div class="avatar">${escapeHtml(initials.toUpperCase())}</div>
-    <div>
-      <div class="user-name">${escapeHtml(name)}</div>
-      <div class="user-meta">${escapeHtml(meta)}</div>
-    </div>
-  `;
-
-  refs.signInBtn.classList.toggle('hidden', state.mode === 'demo' || Boolean(state.user));
-  refs.signOutBtn.classList.toggle('hidden', state.mode === 'demo' || !state.user);
-  updateModeBadge();
+  const cloud = state.mode === 'cloud';
+  const signedIn = Boolean(state.user);
+  const ready = Boolean(state.storage) && cloud;
+  refs.signInBtn.classList.toggle('hidden', !cloud || signedIn);
+  refs.phoneSignInBtn.classList.toggle('hidden', !cloud || signedIn);
+  refs.twitterSignInBtn.classList.toggle('hidden', !cloud || signedIn || !state.storage?.twitterAvailable);
+  refs.signOutBtn.classList.toggle('hidden', !cloud || !signedIn);
+  refs.signInBtn.disabled = !ready;
+  refs.phoneSignInBtn.disabled = !ready;
+  refs.twitterSignInBtn.disabled = !ready;
+  refs.signOutBtn.disabled = !ready;
+  refs.accountSignOutBtn.classList.toggle('hidden', !cloud || !signedIn);
+  refs.accountSignOutBtn.disabled = !ready;
+  refs.authStatus.textContent = signedIn
+    ? `Signed in${state.user.email ? ` · ${state.user.email}` : ''}`
+    : cloud ? 'Signed out · sign in to view private data' : 'Local demo · data stays in this browser';
+  refs.journalAccessNotice.textContent = signedIn || state.mode === 'demo'
+    ? ''
+    : 'Sign in with Google or phone to load your private journal. The calculator remains available while signed out.';
+  refs.winnerAccessNotice.textContent = signedIn || state.mode === 'demo'
+    ? ''
+    : 'Sign in with Google or phone to load your private Winner Database.';
 }
 
 function periodPresetRange(preset) {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  switch (preset) {
-    case 'THIS_MONTH':
-      return {
-        fromDate: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
-        toDate: now.toISOString().slice(0, 10),
-      };
-    case 'LAST_30': {
-      const from = new Date(startOfToday);
-      from.setDate(from.getDate() - 29);
-      return { fromDate: from.toISOString().slice(0, 10), toDate: now.toISOString().slice(0, 10) };
-    }
-    case 'LAST_90': {
-      const from = new Date(startOfToday);
-      from.setDate(from.getDate() - 89);
-      return { fromDate: from.toISOString().slice(0, 10), toDate: now.toISOString().slice(0, 10) };
-    }
-    case 'YTD':
-      return {
-        fromDate: new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10),
-        toDate: now.toISOString().slice(0, 10),
-      };
-    default:
-      return { fromDate: '', toDate: '' };
-  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const iso = (date) => date.toISOString().slice(0, 10);
+  if (preset === 'THIS_MONTH') return { fromDate: iso(new Date(now.getFullYear(), now.getMonth(), 1)), toDate: iso(now) };
+  if (preset === 'LAST_30') { today.setDate(today.getDate() - 29); return { fromDate: iso(today), toDate: iso(now) }; }
+  if (preset === 'LAST_90') { today.setDate(today.getDate() - 89); return { fromDate: iso(today), toDate: iso(now) }; }
+  if (preset === 'YTD') return { fromDate: iso(new Date(now.getFullYear(), 0, 1)), toDate: iso(now) };
+  return { fromDate: '', toDate: '' };
 }
 
 function getFilteredTradesRaw() {
-  const filtered = filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  return filtered.map(({ metrics, ...trade }) => trade);
+  return filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE)
+    .map(({ metrics, ...trade }) => trade);
 }
 
 function getRenderableTrades() {
-  const filtered = filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  return sortTrades(filtered, state.filters.sort);
+  return sortTrades(
+    filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE),
+    state.filters.sort,
+  );
 }
 
 function getRenderableWinners() {
@@ -329,658 +236,242 @@ function getRenderableWinners() {
 }
 
 function activeTradeFilterLabels() {
+  const f = state.filters;
   const labels = [];
-  if (state.filters.search) labels.push(`Search: ${state.filters.search}`);
-  if (state.filters.periodPreset && state.filters.periodPreset !== 'ALL' && state.filters.periodPreset !== 'CUSTOM') labels.push(state.filters.periodPreset.replace(/_/g, ' '));
-  if (state.filters.status && state.filters.status !== 'ALL') labels.push(state.filters.status);
-  if (state.filters.direction && state.filters.direction !== 'ALL') labels.push(state.filters.direction);
-  if (state.filters.result && state.filters.result !== 'ALL') labels.push(state.filters.result === 'WIN' ? 'Winners' : 'Losers');
-  if (state.filters.timeframe && state.filters.timeframe !== 'ALL') labels.push(state.filters.timeframe);
-  if (state.filters.strategy && state.filters.strategy !== 'ALL') labels.push(`Strategy: ${state.filters.strategy}`);
-  if (state.filters.minMbi) labels.push(`SuperMBI ≥ ${state.filters.minMbi}`);
-  if (state.filters.lossWorseThan) labels.push(`Loss ≤ -${state.filters.lossWorseThan}%`);
-  if (state.filters.minAbsMove) labels.push(`Abs move ≥ ${state.filters.minAbsMove}%`);
-  if (state.filters.maxDipBeforeMove) labels.push(`Dip ≤ ${state.filters.maxDipBeforeMove}%`);
-  if (state.filters.fromDate || state.filters.toDate) labels.push(`${state.filters.fromDate || '...'} → ${state.filters.toDate || '...'}`);
+  if (f.search) labels.push(`Search: ${f.search}`);
+  if (f.periodPreset && f.periodPreset !== 'ALL' && f.periodPreset !== 'CUSTOM') labels.push(f.periodPreset.replace(/_/g, ' '));
+  if (f.status !== 'ALL') labels.push(f.status);
+  if (f.direction !== 'ALL') labels.push(f.direction);
+  if (f.result !== 'ALL') labels.push(f.result === 'WIN' ? 'Winners' : 'Losers');
+  if (f.timeframe !== 'ALL') labels.push(f.timeframe);
+  if (f.strategy !== 'ALL') labels.push(`Strategy: ${f.strategy}`);
+  if (f.lossWorseThan) labels.push(`Loss ≤ -${f.lossWorseThan}%`);
+  if (f.minAbsMove) labels.push(`Move ≥ ${f.minAbsMove}%`);
+  if (f.maxDipBeforeMove) labels.push(`Dip ≤ ${f.maxDipBeforeMove}%`);
+  if (f.fromDate || f.toDate) labels.push(`${f.fromDate || '…'} → ${f.toDate || '…'}`);
   return labels;
 }
 
 function activeWinnerFilterLabels() {
+  const f = state.winnerFilters;
   const labels = [];
-  if (state.winnerFilters.search) labels.push(`Search: ${state.winnerFilters.search}`);
-  if (state.winnerFilters.sector && state.winnerFilters.sector !== 'ALL') labels.push(`Sector: ${state.winnerFilters.sector}`);
-  if (state.winnerFilters.type && state.winnerFilters.type !== 'ALL') labels.push(`Type: ${state.winnerFilters.type}`);
-  if (state.winnerFilters.setup && state.winnerFilters.setup !== 'ALL') labels.push(`Setup: ${state.winnerFilters.setup}`);
-  if (state.winnerFilters.timeframe && state.winnerFilters.timeframe !== 'ALL') labels.push(state.winnerFilters.timeframe);
-  if (state.winnerFilters.period && state.winnerFilters.period !== 'ALL') labels.push(`Period: ${state.winnerFilters.period}`);
-  if (state.winnerFilters.minMove) labels.push(`Move ≥ ${state.winnerFilters.minMove}%`);
-  if (state.winnerFilters.minInitialMove) labels.push(`Initial ≥ ${state.winnerFilters.minInitialMove}%`);
-  if (state.winnerFilters.maxDipBeforeMove) labels.push(`Dip ≤ ${state.winnerFilters.maxDipBeforeMove}%`);
-  if (state.winnerFilters.maxStage4Decline) labels.push(`Stage-4 ≤ ${state.winnerFilters.maxStage4Decline}%`);
-  if (state.winnerFilters.minMbi) labels.push(`SuperMBI ≥ ${state.winnerFilters.minMbi}`);
-  if (state.winnerFilters.minMoveCount) labels.push(`Moves ≥ ${state.winnerFilters.minMoveCount}`);
-  if (state.winnerFilters.minBaseCount) labels.push(`Bases ≥ ${state.winnerFilters.minBaseCount}`);
-  if (state.winnerFilters.minAvgExpansion) labels.push(`Avg expansion ≥ ${state.winnerFilters.minAvgExpansion}%`);
-  if (state.winnerFilters.minMaxExpansion) labels.push(`Best expansion ≥ ${state.winnerFilters.minMaxExpansion}%`);
-  if (state.winnerFilters.minBiggestBaseLength) labels.push(`Biggest base ≥ ${state.winnerFilters.minBiggestBaseLength} bars`);
-  if (state.winnerFilters.maxDeepestBase) labels.push(`Deepest base ≤ ${state.winnerFilters.maxDeepestBase}%`);
-  if (state.winnerFilters.hasImage && state.winnerFilters.hasImage !== 'ALL') labels.push(state.winnerFilters.hasImage === 'YES' ? 'Has image' : 'No image');
-  if (state.winnerFilters.fromDate || state.winnerFilters.toDate) labels.push(`${state.winnerFilters.fromDate || '...'} → ${state.winnerFilters.toDate || '...'}`);
+  if (f.search) labels.push(`Search: ${f.search}`);
+  if (f.setup !== 'ALL') labels.push(`Setup: ${f.setup}`);
+  if (f.sector !== 'ALL') labels.push(`Sector: ${f.sector}`);
+  if (f.type !== 'ALL') labels.push(`Type: ${f.type}`);
+  if (f.timeframe !== 'ALL') labels.push(f.timeframe);
+  if (f.period !== 'ALL') labels.push(`Period: ${f.period}`);
+  if (f.minInitialMove) labels.push(`Initial ≥ ${f.minInitialMove}%`);
+  if (f.maxDipBeforeMove) labels.push(`Dip ≤ ${f.maxDipBeforeMove}%`);
+  if (f.maxStage4Decline) labels.push(`Stage-4 ≤ ${f.maxStage4Decline}%`);
+  if (f.minMoveCount) labels.push(`Moves ≥ ${f.minMoveCount}`);
+  if (f.minBaseCount) labels.push(`Bases ≥ ${f.minBaseCount}`);
+  if (f.hasImage !== 'ALL') labels.push(f.hasImage === 'YES' ? 'Has screenshot' : 'No screenshot');
   return labels;
+}
+
+function filterPills(labels) {
+  return labels.length
+    ? `<div class="filter-pill-row">${labels.map((label) => `<span class="pill pill-muted">${escapeHtml(label)}</span>`).join('')}</div>`
+    : '<div class="filter-pill-row"><span class="pill pill-muted">No extra filters</span></div>';
 }
 
 function renderTradeFilterSummary() {
   const items = getRenderableTrades();
-  const labels = activeTradeFilterLabels();
+  const closed = items.filter((trade) => trade.metrics.status === 'CLOSED').length;
   const uniqueSymbols = new Set(items.map((trade) => trade.symbol).filter(Boolean)).size;
-  const closedCount = items.filter((trade) => trade.metrics.status === 'CLOSED').length;
-  const summaryText = `${items.length} filtered trades • ${uniqueSymbols} symbols • ${closedCount} closed`;
-  const pills = labels.length
-    ? `<div class="filter-pill-row">${labels.map((label) => `<span class="pill pill-muted">${escapeHtml(label)}</span>`).join('')}</div>`
-    : '<div class="filter-pill-row"><span class="pill pill-muted">No extra filters</span></div>';
-  if (refs.journalFilterSummary) refs.journalFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summaryText}</div></div>${pills}`;
-  if (refs.dashboardFilterSummary) refs.dashboardFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">Dashboard scope: ${summaryText}</div></div>${pills}`;
+  refs.journalFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${items.length} filtered trades · ${uniqueSymbols} symbols · ${closed} closed</div></div>${filterPills(activeTradeFilterLabels())}`;
 }
 
-function renderJournalStats() {
-  if (!refs.journalStatsCards) return;
-  if (!requireCloudAuth()) {
-    refs.journalStatsCards.innerHTML = '<div class="empty-state">Sign in to see scoped journal stats.</div>';
-    if (refs.journalStatsNote) refs.journalStatsNote.textContent = 'Journal stats respect the active period and filter scope.';
+function makeMetricPreviewCard(label, value, className = '') {
+  return `<div class="panel metric-card"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value ${className}">${value}</div></div>`;
+}
+
+function renderJournalSummary() {
+  if (!isPrivateDataAvailable()) {
+    refs.journalSummaryCards.innerHTML = '<div class="empty-state">Sign in to see private journal performance.</div>';
+    refs.journalStatsCards.innerHTML = '';
+    refs.journalStatsNote.textContent = '';
     return;
   }
-
-  const scopedTrades = getFilteredTradesRaw();
-  const summary = summarizeJournal(scopedTrades, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  const noClosedTrades = Number(summary.closedTradeCount || 0) === 0;
-  const cards = [
-    makeMetricPreviewCard('Win %', noClosedTrades ? '—' : formatPercent(summary.winRate, 1), summary.winRate >= 50 ? 'positive' : ''),
-    makeMetricPreviewCard('Loss %', noClosedTrades ? '—' : formatPercent(summary.lossRate, 1), summary.lossRate > 50 ? 'negative' : ''),
-    makeMetricPreviewCard('Win size', Number(summary.winCount || 0) ? formatCurrency(summary.grossProfit, getCurrency()) : '—', 'positive'),
-    makeMetricPreviewCard('Loss size', Number(summary.lossCount || 0) ? formatCurrency(Math.abs(summary.grossLossAbs || 0), getCurrency()) : '—', 'negative'),
-    makeMetricPreviewCard('Avg win size', Number(summary.winCount || 0) ? formatCurrency(summary.avgWin, getCurrency()) : '—', 'positive'),
-    makeMetricPreviewCard('Avg loss size', Number(summary.lossCount || 0) ? formatCurrency(Math.abs(summary.avgLossAbs || 0), getCurrency()) : '—', 'negative'),
-    makeMetricPreviewCard('Avg win hold', Number(summary.winCount || 0) ? formatDurationMinutes(summary.avgWinHoldMinutes) : '—'),
-    makeMetricPreviewCard('Avg loss hold', Number(summary.lossCount || 0) ? formatDurationMinutes(summary.avgLossHoldMinutes) : '—', summary.avgLossHoldMinutes > summary.avgWinHoldMinutes ? 'negative' : ''),
-    makeMetricPreviewCard('Avg dip before move', summary.avgDipBeforeMove != null ? formatPercent(summary.avgDipBeforeMove, 2) : '—'),
-    makeMetricPreviewCard('Avg winner dip', summary.avgWinDipBeforeMove != null ? formatPercent(summary.avgWinDipBeforeMove, 2) : '—', 'positive'),
-    makeMetricPreviewCard('Avg loser dip', summary.avgLossDipBeforeMove != null ? formatPercent(summary.avgLossDipBeforeMove, 2) : '—', summary.avgLossDipBeforeMove != null && summary.avgWinDipBeforeMove != null && summary.avgLossDipBeforeMove > summary.avgWinDipBeforeMove ? 'negative' : ''),
-    makeMetricPreviewCard('Winner dip 80% (SL guide)', summary.winnerDipP80 != null ? formatPercent(summary.winnerDipP80, 2) : '—', summary.winnerDipP80 != null ? 'warning' : ''),
-    makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
-    makeMetricPreviewCard('Peak open risk', summary.peakOpenRisk > 0 ? formatCurrency(summary.peakOpenRisk, getCurrency()) : '—', summary.peakOpenRisk > 0 ? 'warning' : ''),
-  ];
-  refs.journalStatsCards.innerHTML = cards.join('');
-
-  if (refs.journalStatsNote) {
-    const dipNote = summary.dipSampleCount > 0
-      ? `${summary.dipSampleCount} closed trade(s) in this scope include dip-before-move data.`
-      : 'Dip-before-move is optional, so add it on trades you want to use for stop analysis.';
-    if (summary.trackedRiskTradeCount > 0) {
-      refs.journalStatsNote.textContent = `Open risk uses Planned risk first, then planned stop distance when a stop exists. ${summary.trackedRiskTradeCount} trade(s) in this scope include enough risk data. ${dipNote}`;
-    } else {
-      refs.journalStatsNote.textContent = `Open risk cards need Planned risk or Planned stop on the trade to be measurable. ${dipNote}`;
-    }
-  }
-}
-
-function renderSummaryCards() {
-  if (!requireCloudAuth()) {
-    refs.summaryCards.innerHTML = '<div class="empty-state">Sign in to see dashboard stats.</div>';
-    if (refs.dashboardInsightCards) refs.dashboardInsightCards.innerHTML = '';
-    if (refs.dashboardInsights) refs.dashboardInsights.innerHTML = '';
-    return;
-  }
-  const scopedTrades = getFilteredTradesRaw();
-  const summary = summarizeJournal(scopedTrades, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  const cards = [
-    { label: 'Closed P&L', value: formatCurrency(summary.netPnl, getCurrency()), className: summary.netPnl >= 0 ? 'positive' : 'negative' },
-    { label: 'Win rate', value: formatPercent(summary.winRate, 1), className: summary.winRate >= 50 ? 'positive' : 'warning' },
-    { label: 'Profit factor', value: summary.profitFactor ? round(summary.profitFactor, 2).toFixed(2) : '—', className: summary.profitFactor >= 1.5 ? 'positive' : '' },
-    { label: 'Expectancy', value: formatCurrency(summary.expectancy, getCurrency()), className: summary.expectancy >= 0 ? 'positive' : 'negative' },
-    { label: 'Max drawdown', value: formatCurrency(summary.maxDrawdown, getCurrency()), className: 'negative' },
-    { label: 'Open trades', value: String(summary.openTradeCount), className: '' },
-  ];
-  refs.summaryCards.innerHTML = cards
-    .map(
-      (card) => `
-        <div class="panel metric-card">
-          <div class="metric-label">${card.label}</div>
-          <div class="metric-value ${card.className || ''}">${card.value}</div>
-        </div>
-      `,
-    )
-    .join('');
-
-  const items = getRenderableTrades();
-  const closed = items.filter((trade) => trade.metrics.status === 'CLOSED');
-  const avgWinnerHold = Number(summary.avgWinHoldMinutes || 0);
-  const avgLoserHold = Number(summary.avgLossHoldMinutes || 0);
-  const bestTimeframe = groupPnlByField(scopedTrades, 'timeframe', state.settings.pnlMethod || PNL_METHODS.AVERAGE)[0];
-  const symbolBuckets = groupPnlByField(scopedTrades, 'symbol', state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  const bestSymbol = symbolBuckets[0];
-  const worstSymbol = [...symbolBuckets].sort((a, b) => a.value - b.value)[0];
-  const coachReport = buildAiCoachReport(scopedTrades, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  const bestMbiBucket = coachReport.series?.mbiBuckets?.[0];
-
-  if (refs.dashboardInsightCards) {
-    refs.dashboardInsightCards.innerHTML = [
-      makeMetricPreviewCard('Best timeframe', bestTimeframe?.label || '—', bestTimeframe?.value >= 0 ? 'positive' : ''),
-      makeMetricPreviewCard('Best symbol', bestSymbol ? `${bestSymbol.label}` : '—', bestSymbol?.value >= 0 ? 'positive' : ''),
-      makeMetricPreviewCard('Weak symbol', worstSymbol ? `${worstSymbol.label}` : '—', worstSymbol?.value < 0 ? 'negative' : ''),
-      makeMetricPreviewCard('Winner hold', avgWinnerHold ? formatDurationMinutes(avgWinnerHold) : '—'),
-      makeMetricPreviewCard('Loser hold', avgLoserHold ? formatDurationMinutes(avgLoserHold) : '—', avgLoserHold > avgWinnerHold ? 'negative' : ''),
-      makeMetricPreviewCard('Avg winner dip', summary.avgWinDipBeforeMove != null ? formatPercent(summary.avgWinDipBeforeMove, 2) : '—'),
-      makeMetricPreviewCard('SL guide (winner dip 80%)', summary.winnerDipP80 != null ? formatPercent(summary.winnerDipP80, 2) : '—', summary.winnerDipP80 != null ? 'warning' : ''),
-      makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
-      makeMetricPreviewCard('Peak open risk', summary.peakOpenRisk > 0 ? formatCurrency(summary.peakOpenRisk, getCurrency()) : '—', summary.peakOpenRisk > 0 ? 'warning' : ''),
-      makeMetricPreviewCard('Best SuperMBI', bestMbiBucket?.label || '—', bestMbiBucket?.pnl > 0 ? 'positive' : ''),
-    ].join('');
-  }
-
-  if (refs.dashboardInsights) {
-    const insights = [];
-    if (closed.length === 0) {
-      refs.dashboardInsights.innerHTML = '<div class="coach-item neutral">No closed trades match the current filter scope yet.</div>';
-      return;
-    }
-    if (avgLoserHold && avgWinnerHold && avgLoserHold > avgWinnerHold) {
-      insights.push(`Losers are held longer than winners (${formatDurationMinutes(avgLoserHold)} vs ${formatDurationMinutes(avgWinnerHold)}). Cutting weak trades earlier should improve reward-to-risk.`);
-    }
-    if (bestTimeframe?.label) {
-      insights.push(`${bestTimeframe.label} is the best-performing timeframe in the current scope. That is the bucket where bigger size is justified first.`);
-    }
-    if (worstSymbol?.value < 0) {
-      insights.push(`${worstSymbol.label} is the biggest drag in this filtered sample. Review those losses before re-allocating size there.`);
-    }
-    if (bestMbiBucket?.label) {
-      insights.push(`${bestMbiBucket.label} SuperMBI conditions are producing the best filtered P&L. When the market gives that regime, you can size more aggressively.`);
-    }
-    if (summary.peakOpenRisk > 0) {
-      const nowLabel = summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '₹0';
-      insights.push(`Current open risk is ${nowLabel}, and the peak concurrent open risk in this filtered sample reached ${formatCurrency(summary.peakOpenRisk, getCurrency())}. Use that number as a ceiling when sizing new adds.`);
-    }
-    if (summary.winnerDipP80 != null) {
-      insights.push(`80% of your winners with dip data only moved ${formatPercent(summary.winnerDipP80, 2)} against you before working. That is a much better stop reference than guessing from memory.`);
-    }
-    if (summary.avgWinDipBeforeMove != null && summary.avgLossDipBeforeMove != null) {
-      if (summary.avgLossDipBeforeMove > summary.avgWinDipBeforeMove) {
-        insights.push(`Losers usually go deeper against you before failing (${formatPercent(summary.avgLossDipBeforeMove, 2)} vs winner dip ${formatPercent(summary.avgWinDipBeforeMove, 2)}). A stop tighter than the loser profile but wider than the winner profile is the sweet spot to test.`);
-      } else {
-        insights.push(`Winners are also shaking you out by about ${formatPercent(summary.avgWinDipBeforeMove, 2)} on average before working. If your stop is tighter than that, you may be cutting good trades too early.`);
-      }
-    }
-    if (!insights.length) insights.push('This filter scope is relatively balanced. Keep tightening entries and exits to turn decent trades into size-worthy trades.');
-    refs.dashboardInsights.innerHTML = insights.map((item) => `<div class="coach-item warning">${escapeHtml(item)}</div>`).join('');
-  }
-}
-
-function renderRecentTrades() {
-  if (!requireCloudAuth()) {
-    refs.recentTrades.innerHTML = '<div class="empty-state">Sign in to view your trades.</div>';
-    return;
-  }
-  const items = getRenderableTrades().slice(0, 5);
-  if (!items.length) {
-    refs.recentTrades.innerHTML = '<div class="empty-state">No trades match the active filters yet.</div>';
-    return;
-  }
-  refs.recentTrades.innerHTML = items.map(renderTradeCard).join('');
-}
-
-function toneClass(tone) {
-  if (tone === 'positive') return 'positive';
-  if (tone === 'negative') return 'negative';
-  if (tone === 'warning') return 'warning';
-  return 'neutral';
-}
-
-function renderCoachList(items = [], fallback, tone = 'neutral') {
-  if (!items.length) return `<div class="coach-item neutral">${escapeHtml(fallback)}</div>`;
-  return items.map((item) => `<div class="coach-item ${toneClass(tone)}">${escapeHtml(item)}</div>`).join('');
-}
-
-function renderCoach() {
-  if (!refs.coachVerdict) return;
-  if (!requireCloudAuth()) {
-    refs.coachVerdict.textContent = 'Sign in needed';
-    refs.coachSummary.textContent = 'Sign in to sync trades and unlock coach analysis.';
-    refs.coachScorePill.className = 'pill pill-muted';
-    refs.coachScorePill.textContent = '0 / 100';
-    refs.coachMetaCards.innerHTML = '<div class="empty-state">Sign in to analyse your cloud journal.</div>';
-    refs.coachStrengths.innerHTML = renderCoachList([], 'No analysis yet.', 'neutral');
-    refs.coachLeaks.innerHTML = renderCoachList([], 'No analysis yet.', 'neutral');
-    refs.coachActions.innerHTML = renderCoachList(['Sign in first, then import trades or add them manually.'], '', 'warning');
-    refs.coachPatternCards.innerHTML = '';
-    state.ui.lastCoachPrompt = '';
-    return;
-  }
-
-  const scopedTrades = getFilteredTradesRaw();
-  const report = buildAiCoachReport(scopedTrades, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  state.ui.lastCoachPrompt = report.promptText || '';
-  refs.coachVerdict.textContent = report.verdict;
-  refs.coachVerdict.className = cn('coach-verdict', report.score >= 70 && 'positive', report.score < 45 && 'negative', report.score >= 45 && report.score < 70 && 'warning');
-  refs.coachSummary.textContent = report.summaryText;
-  refs.coachScorePill.className = cn('pill', report.score >= 70 ? 'pill-green' : report.score >= 45 ? 'pill-amber' : 'pill-red');
-  refs.coachScorePill.textContent = `${report.score} / 100`;
-
-  const avgLossAbs = Math.abs(report.summary.avgLoss || 0);
-  const rewardRisk = avgLossAbs > 0 ? (Math.abs(report.summary.avgWin || 0) / avgLossAbs) : 0;
-  refs.coachMetaCards.innerHTML = [
-    makeMetricPreviewCard('Coach score', `${report.score}/100`, report.score >= 70 ? 'positive' : report.score < 45 ? 'negative' : 'warning'),
-    makeMetricPreviewCard('Profit factor', report.summary.profitFactor ? round(report.summary.profitFactor, 2).toFixed(2) : '—', (report.summary.profitFactor || 0) >= 1.5 ? 'positive' : (report.summary.profitFactor || 0) > 0 && (report.summary.profitFactor || 0) < 1 ? 'negative' : ''),
-    makeMetricPreviewCard('Reward / risk', rewardRisk ? round(rewardRisk, 2).toFixed(2) : '—', rewardRisk >= 1.3 ? 'positive' : rewardRisk > 0 && rewardRisk < 1 ? 'negative' : ''),
-    makeMetricPreviewCard('Loss streak', String(report.summary.bestLossStreak || 0), (report.summary.bestLossStreak || 0) >= 3 ? 'negative' : ''),
-    makeMetricPreviewCard('Closed trades', String(report.summary.closedTradeCount || 0)),
-    makeMetricPreviewCard('Expectancy', formatCurrency(report.summary.expectancy || 0, getCurrency()), (report.summary.expectancy || 0) >= 0 ? 'positive' : 'negative'),
+  const summary = summarizeJournal(getFilteredTradesRaw(), state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const rate = summary.closedTradeCount ? formatPercent(summary.winRate, 1) : '—';
+  refs.journalSummaryCards.innerHTML = [
+    makeMetricPreviewCard('Closed-trade net P&L', formatCurrency(summary.netPnl, getCurrency()), summary.netPnl >= 0 ? 'positive' : 'negative'),
+    makeMetricPreviewCard('Closed trades', String(summary.closedTradeCount)),
+    makeMetricPreviewCard(`Win rate · ${summary.winCount} of ${summary.closedTradeCount}`, rate, summary.winRate >= 50 ? 'positive' : 'warning'),
+    makeMetricPreviewCard('Open positions', String(summary.openTradeCount)),
   ].join('');
-
-  refs.coachStrengths.innerHTML = renderCoachList(report.strengths, 'Add more clean closed trades to surface durable strengths.', 'positive');
-  refs.coachLeaks.innerHTML = renderCoachList(report.leaks, 'No dominant leak identified yet.', 'negative');
-  refs.coachActions.innerHTML = report.actions.length
-    ? report.actions.map((item) => `<div class="coach-item warning">${escapeHtml(item)}</div>`).join('')
-    : renderCoachList([], 'No immediate action plan yet.', 'warning');
-  refs.coachPatternCards.innerHTML = report.patternCards.length
-    ? report.patternCards.map((item) => `
-        <div class="panel metric-card">
-          <div class="metric-label">${escapeHtml(item.label)}</div>
-          <div class="metric-value ${toneClass(item.tone)}">${escapeHtml(item.value)}</div>
-          <div class="pattern-card-note">${escapeHtml(item.note || '')}</div>
-        </div>
-      `).join('')
-    : '<div class="empty-state">Start tagging strategies and SuperMBI snapshots to unlock more pattern cards.</div>';
+  refs.journalStatsCards.innerHTML = [
+    makeMetricPreviewCard('Gross wins', summary.winCount ? formatCurrency(summary.grossProfit, getCurrency()) : '—', 'positive'),
+    makeMetricPreviewCard('Gross losses', summary.lossCount ? formatCurrency(Math.abs(summary.grossLossAbs), getCurrency()) : '—', 'negative'),
+    makeMetricPreviewCard('Average win hold', summary.winCount ? formatDurationMinutes(summary.avgWinHoldMinutes) : '—'),
+    makeMetricPreviewCard('Average loss hold', summary.lossCount ? formatDurationMinutes(summary.avgLossHoldMinutes) : '—'),
+    makeMetricPreviewCard('Open risk now', summary.currentOpenRisk > 0 ? formatCurrency(summary.currentOpenRisk, getCurrency()) : '—', summary.currentOpenRisk > 0 ? 'warning' : ''),
+  ].join('');
+  refs.journalStatsNote.textContent = summary.trackedRiskTradeCount
+    ? `Open risk uses planned risk first, then planned stop-loss distance. ${summary.trackedRiskTradeCount} trade(s) have measurable risk data.`
+    : 'Open risk needs Planned risk or a valid planned stop-loss price.';
 }
 
 function renderTradeCard(trade) {
   const metrics = trade.metrics || computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  const statusPill = metrics.status === 'OPEN' ? '<span class="pill pill-blue">Open</span>' : '<span class="pill pill-green">Closed</span>';
-  const directionPill = trade.direction === 'SHORT' ? '<span class="pill pill-red">Short</span>' : '<span class="pill pill-green">Long</span>';
-  const timeframePill = `<span class="pill pill-muted">${escapeHtml(metrics.timeframe || inferTradeTimeframe(trade, metrics))}</span>`;
+  const links = state.winners.filter((entry) => entry.sourceTradeId === trade.id);
+  const linkAction = links.length ? 'view-winner' : 'save-winner';
+  const linkLabel = links.length ? 'View winner example' : 'Save as winner example';
+  const status = metrics.status === 'OPEN' ? '<span class="pill pill-blue">Open</span>' : '<span class="pill pill-green">Closed</span>';
+  const direction = trade.direction === 'SHORT' ? '<span class="pill pill-red">Short</span>' : '<span class="pill pill-green">Long</span>';
   const pnlClass = metrics.realizedNetPnl >= 0 ? 'positive' : 'negative';
   const tags = (trade.tags || []).map((tag) => `<span class="trade-tag">${escapeHtml(tag)}</span>`).join('');
-
-  return `
-    <article class="trade-card" data-trade-id="${escapeHtml(trade.id)}">
-      <div class="trade-card-head">
-        <div>
-          <div class="trade-symbol-wrap">
-            <div class="trade-symbol">${escapeHtml(trade.symbol || '—')}</div>
-            ${statusPill}
-            ${directionPill}
-            ${timeframePill}
-            ${trade.strategy ? `<span class="pill pill-muted">${escapeHtml(trade.strategy)}</span>` : ''}
-          </div>
-          ${tags ? `<div class="trade-tags">${tags}</div>` : ''}
-        </div>
-        <div>
-          <div class="metric-value ${pnlClass}">${formatCurrency(metrics.realizedNetPnl, getCurrency())}</div>
-          <div class="metric-sub ${metrics.realizedPct >= 0 ? 'positive' : 'negative'}">${metrics.realizedPct != null ? formatPercent(metrics.realizedPct, 2) : '—'}</div>
-        </div>
-      </div>
-      <div class="trade-meta">
-        <div>Opened: ${formatDateTime(metrics.entryAt || trade.createdAt)}</div>
-        <div>Avg entry: ${metrics.avgEntryPrice ? formatCurrency(metrics.avgEntryPrice, getCurrency()) : '—'}</div>
-        <div>Avg exit: ${metrics.avgExitPrice ? formatCurrency(metrics.avgExitPrice, getCurrency()) : '—'}</div>
-        <div>Hold: ${formatDurationMinutes(metrics.holdMinutes)}</div>
-        <div>SuperMBI: ${trade.mbiScore ?? '—'}</div>
-      </div>
-      <div class="trade-stats">
-        <div class="stat-chip"><div class="label">Entry qty</div><div class="value">${metrics.totalEntryQty}</div></div>
-        <div class="stat-chip"><div class="label">Exit qty</div><div class="value">${metrics.totalExitQty}</div></div>
-        <div class="stat-chip"><div class="label">Abs move %</div><div class="value">${metrics.absMovePct != null ? formatPercent(metrics.absMovePct, 2) : '—'}</div></div>
-        <div class="stat-chip"><div class="label">Dip before move</div><div class="value">${trade.dipBeforeMove != null ? formatPercent(trade.dipBeforeMove, 2) : '—'}</div></div>
-        <div class="stat-chip"><div class="label">R multiple</div><div class="value">${metrics.realizedR != null ? round(metrics.realizedR, 2).toFixed(2) : '—'}</div></div>
-        <div class="stat-chip"><div class="label">Fills</div><div class="value">${metrics.fillCount}</div></div>
-      </div>
-      ${trade.notes ? `<div class="trade-notes">${escapeHtml(trade.notes)}</div>` : ''}
-      <div class="trade-actions">
-        <button class="btn btn-ghost" data-action="duplicate" data-trade-id="${escapeHtml(trade.id)}">Duplicate</button>
-        <button class="btn btn-ghost" data-action="edit" data-trade-id="${escapeHtml(trade.id)}">Edit</button>
-        <button class="btn btn-danger" data-action="delete" data-trade-id="${escapeHtml(trade.id)}">Delete</button>
-      </div>
-    </article>
-  `;
+  return `<article class="trade-card" data-trade-id="${escapeHtml(trade.id)}"><div class="trade-card-head"><div><div class="trade-symbol-wrap"><div class="trade-symbol">${escapeHtml(trade.symbol || '—')}</div>${status}${direction}<span class="pill pill-muted">${escapeHtml(metrics.timeframe || inferTradeTimeframe(trade, metrics))}</span>${trade.strategy ? `<span class="pill pill-muted">${escapeHtml(trade.strategy)}</span>` : ''}</div>${tags ? `<div class="trade-tags">${tags}</div>` : ''}</div><div><div class="metric-value ${pnlClass}">${formatCurrency(metrics.realizedNetPnl, getCurrency())}</div><div class="metric-sub">${metrics.realizedPct != null ? formatPercent(metrics.realizedPct, 2) : metrics.openQty ? `${metrics.openQty} open` : '—'}</div></div></div><div class="trade-meta"><div>Entry: ${formatDateTime(metrics.entryAt || trade.createdAt)}</div><div>Exit: ${metrics.exitAt ? formatDateTime(metrics.exitAt) : 'Open'}</div><div>Qty: ${metrics.totalEntryQty} in · ${metrics.totalExitQty} out</div><div>Net realized P&amp;L: ${formatCurrency(metrics.realizedNetPnl, getCurrency())}</div></div><div class="trade-stats"><div class="stat-chip"><div class="label">Open qty</div><div class="value">${metrics.openQty}</div></div><div class="stat-chip"><div class="label">Move %</div><div class="value">${metrics.realizedPct != null ? formatPercent(metrics.realizedPct, 2) : '—'}</div></div><div class="stat-chip"><div class="label">R multiple</div><div class="value">${metrics.realizedR != null ? round(metrics.realizedR, 2).toFixed(2) : '—'}</div></div><div class="stat-chip"><div class="label">Fees</div><div class="value">${formatCurrency(metrics.feesTotal, getCurrency())}</div></div><div class="stat-chip"><div class="label">Fills</div><div class="value">${metrics.fillCount}</div></div></div>${trade.notes ? `<div class="trade-notes">${escapeHtml(trade.notes)}</div>` : ''}<div class="trade-actions"><button class="btn btn-ghost" data-action="duplicate" data-trade-id="${escapeHtml(trade.id)}">Duplicate</button><button class="btn btn-ghost" data-action="edit" data-trade-id="${escapeHtml(trade.id)}">Edit</button>${metrics.status === 'CLOSED' && metrics.realizedNetPnl > 0 ? `<button class="btn btn-ghost" data-action="${linkAction}" data-trade-id="${escapeHtml(trade.id)}">${linkLabel}</button>` : ''}<button class="btn btn-danger" data-action="delete" data-trade-id="${escapeHtml(trade.id)}">Delete</button></div></article>`;
 }
 
 function renderJournalTable() {
-  if (!requireCloudAuth()) {
-    refs.journalTable.innerHTML = '<div class="panel empty-state">Sign in with Google to sync trades to Firestore. In demo mode, copy your Firebase config into <code>js/config.js</code>.</div>';
+  if (!isPrivateDataAvailable()) {
+    refs.journalTable.innerHTML = '<div class="panel empty-state">Your private trades will appear here after sign-in. The calculator can create a draft before authentication.</div>';
     return;
   }
   const items = getRenderableTrades();
-  if (!items.length) {
-    refs.journalTable.innerHTML = '<div class="panel empty-state">No trades match the current filters.</div>';
-    return;
-  }
-  refs.journalTable.innerHTML = items.map(renderTradeCard).join('');
+  refs.journalTable.innerHTML = items.length ? items.map(renderTradeCard).join('') : '<div class="panel empty-state">No trades match the current filters. Try clearing a filter or add a trade.</div>';
 }
 
 function renderStrategyFilter() {
   const strategies = [...new Set(state.trades.map((trade) => trade.strategy || 'Unspecified').filter(Boolean))].sort();
-  refs.strategyFilter.innerHTML = '<option value="ALL">All</option>' + strategies.map((strategy) => `<option value="${escapeHtml(strategy)}">${escapeHtml(strategy)}</option>`).join('');
+  refs.strategyFilter.innerHTML = '<option value="ALL">All</option>' + strategies.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
   refs.strategyFilter.value = state.filters.strategy;
 }
 
 function renderWinnerFilterOptions() {
-  if (!refs.winnerSectorFilter) return;
-  const sectors = [...new Set(state.winners.map((entry) => entry.sector || 'Unspecified').filter(Boolean))].sort();
-  const types = [...new Set(state.winners.map((entry) => entry.type || 'Unspecified').filter(Boolean))].sort();
-  const setups = [...new Set(state.winners.map((entry) => entry.setup || 'Unspecified').filter(Boolean))].sort();
-  const periods = [...new Set(state.winners.map((entry) => entry.period || 'Unspecified').filter(Boolean))].sort();
-  refs.winnerSectorFilter.innerHTML = '<option value="ALL">All</option>' + sectors.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
-  refs.winnerTypeFilter.innerHTML = '<option value="ALL">All</option>' + types.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
-  refs.winnerSetupFilter.innerHTML = '<option value="ALL">All</option>' + setups.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
-  refs.winnerPeriodFilter.innerHTML = '<option value="ALL">All</option>' + periods.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
-  refs.winnerSectorFilter.value = state.winnerFilters.sector;
-  refs.winnerTypeFilter.value = state.winnerFilters.type;
-  refs.winnerSetupFilter.value = state.winnerFilters.setup;
-  refs.winnerPeriodFilter.value = state.winnerFilters.period;
+  const values = (field) => [...new Set(state.winners.map((entry) => entry[field] || 'Unspecified').filter(Boolean))].sort();
+  for (const [ref, field] of [[refs.winnerSectorFilter, 'sector'], [refs.winnerTypeFilter, 'type'], [refs.winnerSetupFilter, 'setup'], [refs.winnerPeriodFilter, 'period']]) {
+    ref.innerHTML = '<option value="ALL">All</option>' + values(field).map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+    ref.value = state.winnerFilters[field];
+  }
+}
+
+function sourceTradeSummary(entry, compact = false) {
+  if (!entry.sourceTradeId) return '';
+  const snapshot = entry.sourceTradeSnapshot || {};
+  const current = state.trades.find((trade) => trade.id === entry.sourceTradeId);
+  const currentMetrics = current ? computeTradeMetrics(current, snapshot.pnlMethod || state.settings.pnlMethod || PNL_METHODS.AVERAGE) : null;
+  const result = snapshot.realizedNetPnl != null ? formatCurrency(snapshot.realizedNetPnl, snapshot.currency || getCurrency()) : 'Result unavailable';
+  const dates = [snapshot.entryAt && `Entry ${formatDateTime(snapshot.entryAt)}`, snapshot.exitAt && `Exit ${formatDateTime(snapshot.exitAt)}`].filter(Boolean).join(' · ');
+  return `<div class="source-trade-box ${compact ? 'compact' : ''}"><div class="panel-title">Saved source trade</div><div class="small-copy">${escapeHtml(snapshot.symbol || entry.stockName || entry.sourceTradeId)} · ${escapeHtml(snapshot.direction || '—')} · ${escapeHtml(dates || 'Dates unavailable')} · ${escapeHtml(result)}</div>${current ? `<button type="button" class="btn btn-ghost compact-top" data-winner-action="view-source" data-source-trade-id="${escapeHtml(entry.sourceTradeId)}">View original trade</button>` : `<div class="small-copy warning-text compact-top">Original trade unavailable · this saved snapshot remains available.</div>`}${currentMetrics && currentMetrics.status !== 'CLOSED' ? '<div class="small-copy warning-text">Current trade is no longer closed; the saved winner snapshot is historical.</div>' : ''}</div>`;
+}
+
+function renderWinnerCard(entry) {
+  const image = entry.imageUrl && looksLikeViewableImageUrl(entry.imageUrl)
+    ? `<button type="button" class="winner-image-button" data-winner-action="preview-image" data-image-url="${escapeHtml(entry.imageUrl)}" data-image-title="${escapeHtml(entry.stockName || 'Chart preview')}"><img data-winner-image src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.stockName || 'Winner chart')}" loading="lazy" /><span class="image-fallback hidden">Screenshot unavailable</span></button>`
+    : `<div class="winner-image-fallback">${entry.imageUrl || entry.imageStoragePath ? 'Image reference saved · preview unavailable' : 'No screenshot'}</div>`;
+  const tags = (entry.tags || []).map((tag) => `<span class="trade-tag">${escapeHtml(tag)}</span>`).join('');
+  const move = entry.effectiveMove != null ? formatPercent(entry.effectiveMove, 1) : 'Move not entered';
+  return `<article class="winner-card" data-winner-id="${escapeHtml(entry.id)}"><div class="winner-card-media">${image}</div><div class="winner-card-body"><div class="winner-card-head"><div><div class="winner-stock">${escapeHtml(entry.stockName || 'Untitled example')}</div><div class="small-copy">${escapeHtml(entry.setup || 'Setup not entered')} · ${escapeHtml(entry.timeframe || 'Timeframe not entered')}</div></div><span class="pill pill-muted">${escapeHtml(move)}</span></div><div class="winner-meta">${entry.breakoutDate ? `Date ${escapeHtml(formatDate(entry.breakoutDate))}` : 'Date not entered'}${entry.period ? ` · ${escapeHtml(entry.period)}` : ''}</div>${tags ? `<div class="trade-tags">${tags}</div>` : ''}${entry.notes ? `<p class="winner-note">${escapeHtml(entry.notes)}</p>` : ''}${sourceTradeSummary(entry, true)}<div class="winner-card-actions"><button type="button" class="btn btn-ghost" data-winner-action="edit" data-winner-id="${escapeHtml(entry.id)}">Edit</button></div></div></article>`;
 }
 
 function renderWinnerSummary() {
-  if (!requireCloudAuth()) {
-    refs.winnerSummaryCards.innerHTML = '<div class="empty-state">Sign in to build the winner database.</div>';
+  if (!isPrivateDataAvailable()) {
+    refs.winnerSummaryCards.innerHTML = '<div class="empty-state">Sign in to build the private Winner Database.</div>';
     refs.winnerTable.innerHTML = '';
     return;
   }
   const items = getRenderableWinners();
   const summary = summarizeWinnerEntries(items);
-  const labels = activeWinnerFilterLabels();
-  const pills = labels.length
-    ? `<div class="filter-pill-row">${labels.map((label) => `<span class="pill pill-muted">${escapeHtml(label)}</span>`).join('')}</div>`
-    : '<div class="filter-pill-row"><span class="pill pill-muted">No extra filters</span></div>';
-  refs.winnerFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summary.count} records • ${summary.uniqueStocks} stocks • ${summary.patternCoverageCount || 0} with move maps • ${summary.withImages} images • ${summary.dipSampleCount || 0} dip data</div></div>${pills}`;
+  refs.winnerFilterSummary.innerHTML = `<div class="filter-summary-line"><div class="text-strong">${summary.count} examples · ${summary.uniqueStocks} stocks · ${summary.withImages} screenshots</div></div>${filterPills(activeWinnerFilterLabels())}`;
   refs.winnerSummaryCards.innerHTML = [
-    makeMetricPreviewCard('Records after filter', String(summary.count)),
-    makeMetricPreviewCard('Stocks after filter', String(summary.uniqueStocks)),
-    makeMetricPreviewCard('Pattern maps', String(summary.patternCoverageCount || 0), summary.patternCoverageCount ? 'positive' : ''),
-    makeMetricPreviewCard('Avg total move %', summary.avgMove != null ? formatPercent(summary.avgMove, 1) : '—', summary.avgMove != null && summary.avgMove >= 20 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg initial move %', summary.avgInitialMove != null ? formatPercent(summary.avgInitialMove, 1) : '—'),
-    makeMetricPreviewCard('Avg moves / stock', summary.avgMoveCount != null ? summary.avgMoveCount.toFixed(1) : '—'),
-    makeMetricPreviewCard('Avg bases / stock', summary.avgBaseCount != null ? summary.avgBaseCount.toFixed(1) : '—'),
-    makeMetricPreviewCard('Avg expansion %', summary.avgExpansion != null ? formatPercent(summary.avgExpansion, 1) : '—'),
-    makeMetricPreviewCard('Avg best expansion %', summary.avgMaxExpansion != null ? formatPercent(summary.avgMaxExpansion, 1) : '—', summary.avgMaxExpansion != null && summary.avgMaxExpansion >= 10 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg biggest base', summary.avgBiggestBase != null ? `${summary.avgBiggestBase} bars` : '—'),
-    makeMetricPreviewCard('Avg deepest base', summary.avgDeepestBase != null ? formatPercent(summary.avgDeepestBase, 1) : '—'),
-    makeMetricPreviewCard('Avg dip before move', summary.avgDipBeforeMove != null ? formatPercent(summary.avgDipBeforeMove, 1) : '—'),
-    makeMetricPreviewCard('Winner dip 80%', summary.dipP80 != null ? formatPercent(summary.dipP80, 1) : '—', summary.dipP80 != null ? 'warning' : ''),
-    makeMetricPreviewCard('Move : dip', summary.avgMoveToDip != null ? `${summary.avgMoveToDip.toFixed(2)}x` : '—', summary.avgMoveToDip != null && summary.avgMoveToDip >= 4 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg stage-4 decline', summary.avgStage4Decline != null ? formatPercent(summary.avgStage4Decline, 1) : '—', summary.avgStage4Decline != null && summary.avgStage4Decline <= 25 ? 'positive' : ''),
-    makeMetricPreviewCard('Avg circuits', summary.avgCircuits != null ? String(summary.avgCircuits) : '—'),
+    makeMetricPreviewCard('Examples', String(summary.count)),
+    makeMetricPreviewCard('Stocks', String(summary.uniqueStocks)),
+    makeMetricPreviewCard('With screenshots', String(summary.withImages), summary.withImages ? 'positive' : ''),
+    makeMetricPreviewCard('Average move', summary.avgMove != null ? formatPercent(summary.avgMove, 1) : '—'),
   ].join('');
-
-  if (!items.length) {
-    refs.winnerTable.innerHTML = '<div class="panel empty-state">No winner database records match the current filters.</div>';
-    return;
-  }
-
-  refs.winnerTable.innerHTML = `
-    <div class="table-card table-wrap">
-      <table class="database-table">
-        <thead>
-          <tr>
-            <th>Stock</th>
-            <th>Sector</th>
-            <th>Type</th>
-            <th>Setup</th>
-            <th>TF</th>
-            <th>Period</th>
-            <th>Moves</th>
-            <th>Bases</th>
-            <th>Avg exp</th>
-            <th>Best exp</th>
-            <th>Biggest base</th>
-            <th>Deepest base</th>
-            <th>Total move</th>
-            <th>Dip</th>
-            <th>Stage-4</th>
-            <th>SuperMBI</th>
-            <th>Image</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items.map((entry) => {
-            const meta = [];
-            if (entry.breakoutDate) meta.push(formatDate(entry.breakoutDate));
-            if (entry.effectiveInitialMove != null) meta.push(`Initial ${formatPercent(entry.effectiveInitialMove, 1)}`);
-            const patternLine = createWinnerPatternLine(entry);
-            const details = [patternLine, entry.notes].filter(Boolean).join(' • ');
-            return `
-            <tr>
-              <td>
-                <div class="winner-stock">${escapeHtml(entry.stockName || '—')}</div>
-                <div class="small-copy">${escapeHtml(meta.join(' • ') || 'No breakout date')}</div>
-              </td>
-              <td>${escapeHtml(entry.sector || '—')}</td>
-              <td>${escapeHtml(entry.type || '—')}</td>
-              <td>${escapeHtml(entry.setup || '—')}</td>
-              <td>${escapeHtml(entry.timeframe || '—')}</td>
-              <td>${escapeHtml(entry.period || '—')}</td>
-              <td>${entry.pattern?.moveCount || '—'}</td>
-              <td>${entry.pattern?.totalBases || '—'}</td>
-              <td>${entry.pattern?.avgExpansion == null ? '—' : formatPercent(entry.pattern.avgExpansion, 1)}</td>
-              <td class="${entry.pattern?.maxExpansion != null && entry.pattern.maxExpansion >= 10 ? 'positive' : ''}">${entry.pattern?.maxExpansion == null ? '—' : formatPercent(entry.pattern.maxExpansion, 1)}</td>
-              <td>${entry.pattern?.maxBaseLength == null ? '—' : `${entry.pattern.maxBaseLength} bars`}</td>
-              <td>${entry.pattern?.maxBaseDepth == null ? '—' : formatPercent(entry.pattern.maxBaseDepth, 1)}</td>
-              <td class="${entry.effectiveMove != null && entry.effectiveMove >= 20 ? 'positive' : ''}">${entry.effectiveMove == null ? '—' : formatPercent(entry.effectiveMove, 1)}</td>
-              <td>${entry.dipBeforeMove == null ? '—' : formatPercent(entry.dipBeforeMove, 1)}</td>
-              <td>${entry.stage4Decline == null ? '—' : formatPercent(entry.stage4Decline, 1)}</td>
-              <td>${entry.mbiScore ?? '—'}</td>
-              <td>${entry.imageUrl ? (looksLikeViewableImageUrl(entry.imageUrl)
-                ? `<a href="${escapeHtml(entry.imageUrl)}" target="_blank" rel="noreferrer"><img class="table-thumb" src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(entry.stockName || 'Winner image')}" /></a>`
-                : '<span class="small-copy">Saved link</span>') : '<span class="small-copy">No image</span>'}</td>
-              <td><button class="btn btn-ghost" data-winner-action="edit" data-winner-id="${escapeHtml(entry.id)}">Edit</button></td>
-            </tr>
-            ${details ? `<tr><td colspan="18" class="small-copy">${escapeHtml(details)}</td></tr>` : ''}`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
+  refs.winnerTable.innerHTML = items.length ? items.map(renderWinnerCard).join('') : '<div class="panel empty-state">No examples match the current filters. Add one or clear a filter.</div>';
 }
 
 function renderCharts() {
   chartManager.clearAll();
-  if (!requireCloudAuth() || !state.trades.length) {
-    return;
-  }
-  const method = state.settings.pnlMethod || PNL_METHODS.AVERAGE;
+  if (state.ui.activeTab !== 'journal' || !isPrivateDataAvailable()) return;
   const scopedTrades = getFilteredTradesRaw();
-
-  if (state.ui.activeTab === 'dashboard') {
-    const equity = buildEquityCurve(scopedTrades, method);
-    const monthly = groupMonthlyPnl(scopedTrades, method);
-    const strategies = groupPnlByField(scopedTrades, 'strategy', method).slice(0, 8);
-    const weekdays = weekdayBreakdown(scopedTrades, method);
-    const timeframes = groupPnlByField(scopedTrades, 'timeframe', method);
-    const report = buildAiCoachReport(scopedTrades, method);
-
-    chartManager.renderLine(
-      'equity',
-      $('#equityChart'),
-      equity.map((item) => formatDate(item.date, { day: '2-digit', month: 'short' })),
-      equity.map((item) => item.value),
-      'Equity',
-    );
-
-    chartManager.renderBar(
-      'monthly',
-      $('#monthlyChart'),
-      monthly.map((item) => item.label),
-      monthly.map((item) => item.value),
-      'Monthly P&L',
-    );
-
-    chartManager.renderHorizontalBar(
-      'strategy',
-      $('#strategyChart'),
-      strategies.map((item) => item.label || 'Unspecified'),
-      strategies.map((item) => item.value),
-      'Strategy P&L',
-    );
-
-    chartManager.renderBar(
-      'weekday',
-      $('#weekdayChart'),
-      weekdays.map((item) => item.label),
-      weekdays.map((item) => item.winRate),
-      'Weekday win rate',
-    );
-
-    chartManager.renderBar(
-      'timeframe',
-      $('#timeframeChart'),
-      timeframes.map((item) => item.label || 'Unspecified'),
-      timeframes.map((item) => item.value),
-      'Timeframe P&L',
-    );
-
-    chartManager.renderBar(
-      'dashboardMbi',
-      $('#dashboardMbiChart'),
-      report.series.mbiBuckets.map((item) => item.label),
-      report.series.mbiBuckets.map((item) => item.pnl),
-      'SuperMBI bucket P&L',
-    );
-    return;
-  }
-
-  if (state.ui.activeTab === 'coach') {
-    const report = buildAiCoachReport(scopedTrades, method);
-    chartManager.renderBar(
-      'mbiBucket',
-      $('#mbiBucketChart'),
-      report.series.mbiBuckets.map((item) => item.label),
-      report.series.mbiBuckets.map((item) => item.pnl),
-      'SuperMBI bucket P&L',
-    );
-    chartManager.renderBar(
-      'holdBucket',
-      $('#holdBucketChart'),
-      report.series.holdBuckets.map((item) => item.label),
-      report.series.holdBuckets.map((item) => item.pnl),
-      'Hold bucket P&L',
-    );
-    return;
-  }
-
-  if (state.ui.activeTab === 'mbi') {
-    renderMbiHistoryVisuals();
-  }
+  const method = state.settings.pnlMethod || PNL_METHODS.AVERAGE;
+  const closed = scopedTrades.filter((trade) => computeTradeMetrics(trade, method).status === 'CLOSED');
+  refs.journalChartsEmpty.classList.toggle('hidden', closed.length > 0);
+  if (!closed.length || !refs.journalPerformanceDetails.open) return;
+  const equity = buildEquityCurve(scopedTrades, method);
+  const monthly = groupMonthlyPnl(scopedTrades, method);
+  chartManager.renderLine('equity', refs.equityChart, equity.map((item) => formatDate(item.date, { day: '2-digit', month: 'short' })), equity.map((item) => item.value), 'Cumulative closed-trade P&L');
+  chartManager.renderBar('monthly', refs.monthlyChart, monthly.map((item) => item.label), monthly.map((item) => item.value), 'Monthly closed-trade P&L');
 }
 
 function renderAll() {
   updateUserSummary();
   renderTradeFilterSummary();
-  renderJournalStats();
+  renderJournalSummary();
   renderStrategyFilter();
-  renderWinnerFilterOptions();
-  renderSummaryCards();
-  renderRecentTrades();
   renderJournalTable();
   renderImportSummary();
+  renderWinnerFilterOptions();
   renderWinnerSummary();
-  renderCoach();
-  renderCharts();
   renderSettingsForm();
-}
-
-function makeMetricPreviewCard(label, value, className = '') {
-  return `<div class="panel metric-card"><div class="metric-label">${label}</div><div class="metric-value ${className}">${value}</div></div>`;
+  renderCharts();
 }
 
 function createFillRow(fill = {}) {
   const row = document.createElement('div');
   row.className = 'fill-card';
   row.dataset.fillId = fill.id || uid('fill');
-  row.innerHTML = `
-    <div class="fill-row">
-      <div class="fill-grid">
-        <label class="field">
-          <span>Date & time</span>
-          <input data-fill-field="executedAt" type="datetime-local" value="${escapeHtml(fill.executedAt ? fill.executedAt.slice(0, 16) : todayLocalDateTimeInput())}" />
-        </label>
-        <label class="field">
-          <span>Side</span>
-          <select data-fill-field="side">
-            <option value="BUY" ${fill.side === 'BUY' ? 'selected' : ''}>Buy</option>
-            <option value="SELL" ${fill.side === 'SELL' ? 'selected' : ''}>Sell</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Qty</span>
-          <input data-fill-field="qty" type="number" step="1" value="${fill.qty ?? ''}" />
-        </label>
-        <label class="field">
-          <span>Price</span>
-          <input data-fill-field="price" type="number" step="0.01" value="${fill.price ?? ''}" />
-        </label>
-        <label class="field">
-          <span>Fees</span>
-          <input data-fill-field="fees" type="number" step="0.01" value="${fill.fees ?? ''}" />
-        </label>
-      </div>
-      <button type="button" class="btn btn-danger" data-action="remove-fill">Remove</button>
-    </div>
-    <label class="field compact-top">
-      <span>Fill note</span>
-      <input data-fill-field="note" type="text" value="${escapeHtml(fill.note || '')}" placeholder="Breakout add / partial profit / stop loss" />
-    </label>
-  `;
+  row.innerHTML = `<div class="fill-row"><div class="fill-grid"><label class="field"><span>Date &amp; time</span><input data-fill-field="executedAt" type="datetime-local" value="${escapeHtml(fill.executedAt ? String(fill.executedAt).slice(0, 16) : todayLocalDateTimeInput())}" /></label><label class="field"><span>Side</span><select data-fill-field="side"><option value="BUY" ${fill.side !== 'SELL' ? 'selected' : ''}>Buy</option><option value="SELL" ${fill.side === 'SELL' ? 'selected' : ''}>Sell</option></select></label><label class="field"><span>Quantity</span><input data-fill-field="qty" type="number" step="1" value="${fill.qty ?? ''}" /></label><label class="field"><span>Price</span><input data-fill-field="price" type="number" step="0.01" value="${fill.price ?? ''}" /></label><label class="field"><span>Fees</span><input data-fill-field="fees" type="number" step="0.01" value="${fill.fees ?? ''}" /></label></div><button type="button" class="btn btn-danger" data-action="remove-fill">Remove</button></div><label class="field compact-top"><span>Fill note</span><input data-fill-field="note" type="text" value="${escapeHtml(fill.note || '')}" placeholder="Scale-in / partial exit / stop-loss" /></label>`;
   refs.fillsContainer.appendChild(row);
 }
 
 function clearTradeForm() {
   refs.tradeForm.reset();
-  $('#tradeId').value = '';
-  $('#tradeTimeframe').value = TRADE_TIMEFRAMES.AUTO;
+  const id = uid('trade');
+  refs.tradeId.value = id;
+  refs.tradeTimeframe.value = TRADE_TIMEFRAMES.AUTO;
   refs.fillsContainer.innerHTML = '';
-  modalTradeSnapshot = null;
   createFillRow({ side: 'BUY' });
   refs.tradeModalTitle.textContent = 'New trade';
   refs.duplicateTradeBtn.classList.add('hidden');
   refs.deleteTradeBtn.classList.add('hidden');
-  syncTradePreview();
+  setFormStatus(refs.tradeSaveStatus);
+  state.ui.tradeDraft = { id, mode: 'new', dirty: false, saving: false, operationId: uid('trade-save'), calculatorSeeded: false };
+  modalTradeSnapshot = null;
 }
 
 function openTradeModal(trade = null, mode = 'edit') {
   clearTradeForm();
   if (trade) {
     modalTradeSnapshot = deepClone(trade);
-    $('#tradeId').value = trade.id || '';
-    $('#tradeSymbol').value = trade.symbol || '';
-    $('#tradeDirection').value = trade.direction || 'LONG';
-    $('#tradeTimeframe').value = trade.timeframe || TRADE_TIMEFRAMES.AUTO;
-    $('#tradeStrategy').value = trade.strategy || '';
-    $('#tradePlannedRisk').value = trade.plannedRisk || '';
-    $('#tradePlannedStop').value = trade.plannedStop || '';
-    $('#tradeMbiScore').value = trade.mbiScore ?? '';
-    $('#tradeDipBeforeMove').value = trade.dipBeforeMove ?? '';
-    $('#tradeTags').value = stringifyTags(trade.tags || []);
-    $('#tradeNotes').value = trade.notes || '';
+    refs.tradeId.value = trade.id || refs.tradeId.value;
+    refs.tradeSymbol.value = trade.symbol || '';
+    refs.tradeDirection.value = trade.direction || 'LONG';
+    refs.tradeTimeframe.value = trade.timeframe || TRADE_TIMEFRAMES.AUTO;
+    refs.tradeStrategy.value = trade.strategy || '';
+    refs.tradePlannedRisk.value = trade.plannedRisk || '';
+    refs.tradePlannedStop.value = trade.plannedStop || '';
+    refs.tradeDipBeforeMove.value = trade.dipBeforeMove ?? '';
+    refs.tradeTags.value = stringifyTags(trade.tags || []);
+    refs.tradeNotes.value = trade.notes || '';
     refs.fillsContainer.innerHTML = '';
     (trade.fills || []).forEach((fill) => createFillRow(fill));
-    refs.tradeModalTitle.textContent = mode === 'duplicate' ? `Duplicate ${trade.symbol}` : `Edit ${trade.symbol}`;
+    refs.tradeModalTitle.textContent = mode === 'duplicate' ? `Duplicate ${trade.symbol || 'trade'}` : `Edit ${trade.symbol || 'trade'}`;
     refs.duplicateTradeBtn.classList.toggle('hidden', mode === 'duplicate');
-    refs.deleteTradeBtn.classList.add('hidden');
-    if (mode === 'edit') {
-      refs.deleteTradeBtn.classList.remove('hidden');
-      refs.duplicateTradeBtn.classList.remove('hidden');
-    }
-    if (mode === 'duplicate') {
-      $('#tradeId').value = '';
-      refs.deleteTradeBtn.classList.add('hidden');
-    }
+    refs.deleteTradeBtn.classList.toggle('hidden', mode !== 'edit');
+    state.ui.tradeDraft = { ...state.ui.tradeDraft, id: refs.tradeId.value, mode, dirty: mode === 'duplicate', calculatorSeeded: false };
   }
   refs.tradeModal.classList.remove('hidden');
   refs.tradeModal.setAttribute('aria-hidden', 'false');
   syncTradePreview();
+  refs.tradeSymbol.focus();
 }
 
-function closeTradeModal() {
+function closeTradeModal(force = false) {
+  const draft = state.ui.tradeDraft;
+  if (!force && draft?.dirty && !window.confirm('Discard this unsaved trade draft?')) return false;
   refs.tradeModal.classList.add('hidden');
   refs.tradeModal.setAttribute('aria-hidden', 'true');
+  state.ui.tradeDraft = null;
+  modalTradeSnapshot = null;
+  state.ui.calculatorDraftActive = false;
+  return true;
 }
 
 function readTradeForm() {
@@ -993,19 +484,19 @@ function readTradeForm() {
     fees: Number(card.querySelector('[data-fill-field="fees"]').value || 0),
     note: card.querySelector('[data-fill-field="note"]').value || '',
   }));
-
+  const { metrics: _metrics, ...historical } = modalTradeSnapshot || {};
   return normalizeTradePayload({
-    id: $('#tradeId').value || uid('trade'),
-    symbol: $('#tradeSymbol').value,
-    direction: $('#tradeDirection').value,
-    timeframe: $('#tradeTimeframe').value,
-    strategy: $('#tradeStrategy').value,
-    plannedRisk: $('#tradePlannedRisk').value,
-    plannedStop: $('#tradePlannedStop').value,
-    dipBeforeMove: $('#tradeDipBeforeMove').value,
-    mbiScore: $('#tradeMbiScore').value,
-    tags: parseTags($('#tradeTags').value),
-    notes: $('#tradeNotes').value,
+    ...historical,
+    id: refs.tradeId.value,
+    symbol: refs.tradeSymbol.value,
+    direction: refs.tradeDirection.value,
+    timeframe: refs.tradeTimeframe.value,
+    strategy: refs.tradeStrategy.value,
+    plannedRisk: refs.tradePlannedRisk.value,
+    plannedStop: refs.tradePlannedStop.value,
+    dipBeforeMove: refs.tradeDipBeforeMove.value,
+    tags: parseTags(refs.tradeTags.value),
+    notes: refs.tradeNotes.value,
     fills,
     createdAt: modalTradeSnapshot?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -1015,20 +506,17 @@ function readTradeForm() {
 function syncTradePreview() {
   try {
     const trade = readTradeForm();
-    if (!trade.symbol || !(trade.fills || []).length) {
+    if (!trade.symbol || !trade.fills.length) {
       refs.tradeMetricsPreview.innerHTML = makeMetricPreviewCard('Status', 'Start filling the trade form');
       return;
     }
     const metrics = computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
     refs.tradeMetricsPreview.innerHTML = [
-      makeMetricPreviewCard('Status', metrics.status),
-      makeMetricPreviewCard('Timeframe', metrics.timeframe),
-      makeMetricPreviewCard('Avg entry', metrics.avgEntryPrice ? formatCurrency(metrics.avgEntryPrice, getCurrency()) : '—'),
-      makeMetricPreviewCard('Avg exit', metrics.avgExitPrice ? formatCurrency(metrics.avgExitPrice, getCurrency()) : '—'),
-      makeMetricPreviewCard('Open qty', String(metrics.openQty)),
-      makeMetricPreviewCard('Move %', metrics.realizedPct != null ? formatPercent(metrics.realizedPct, 2) : '—', metrics.realizedPct >= 0 ? 'positive' : 'negative'),
-      makeMetricPreviewCard('Dip before move', trade.dipBeforeMove != null ? formatPercent(trade.dipBeforeMove, 2) : '—'),
-      makeMetricPreviewCard('Net P&L', formatCurrency(metrics.realizedNetPnl, getCurrency()), metrics.realizedNetPnl >= 0 ? 'positive' : 'negative'),
+      makeMetricPreviewCard('Status', metrics.status), makeMetricPreviewCard('Timeframe', metrics.timeframe),
+      makeMetricPreviewCard('Average entry', metrics.avgEntryPrice ? formatCurrency(metrics.avgEntryPrice, getCurrency()) : '—'),
+      makeMetricPreviewCard('Average exit', metrics.avgExitPrice ? formatCurrency(metrics.avgExitPrice, getCurrency()) : '—'),
+      makeMetricPreviewCard('Open quantity', String(metrics.openQty)), makeMetricPreviewCard('Fees', formatCurrency(metrics.feesTotal, getCurrency())),
+      makeMetricPreviewCard('Realized P&L', formatCurrency(metrics.realizedNetPnl, getCurrency()), metrics.realizedNetPnl >= 0 ? 'positive' : 'negative'),
       makeMetricPreviewCard('R multiple', metrics.realizedR != null ? round(metrics.realizedR, 2).toFixed(2) : '—'),
     ].join('');
   } catch (error) {
@@ -1037,42 +525,25 @@ function syncTradePreview() {
 }
 
 function renderImportSummary() {
-  if (!refs.importSummary) return;
-  const summary = state.ui.lastImportSummary;
-  if (!summary) {
-    refs.importSummary.textContent = 'Tradebook CSV import accepts raw broker rows and groups them into flat-to-flat journal trades automatically. Unmatched closing-only rows are skipped and reported.';
+  if (!state.ui.lastImportSummary) {
+    refs.importSummary.textContent = 'Broker CSV import groups execution rows into journal trades and reports unmatched closing rows.';
     return;
   }
-  const skippedTail = summary.skippedSymbols?.length
-    ? `Skipped symbols: ${summary.skippedSymbols.slice(0, 6).join(', ')}${summary.skippedSymbols.length > 6 ? '…' : ''}.`
-    : 'No orphan closing rows were skipped.';
-  refs.importSummary.innerHTML = `
-    <div class="import-summary">
-      <strong>Last import:</strong> ${escapeHtml(summary.fileName || 'tradebook.csv')} •
-      ${Number(summary.rawRowCount || 0).toLocaleString('en-IN')} rows →
-      ${Number(summary.mergedFillCount || 0).toLocaleString('en-IN')} merged fills →
-      ${Number(summary.tradeCount || 0).toLocaleString('en-IN')} journal trades
-      (${Number(summary.closedTradeCount || 0)} closed, ${Number(summary.openTradeCount || 0)} open).<br />
-      ${escapeHtml(skippedTail)}
-    </div>
-  `;
+  const summary = state.ui.lastImportSummary;
+  refs.importSummary.innerHTML = `<div class="import-summary"><strong>Last import:</strong> ${escapeHtml(summary.fileName || 'tradebook.csv')} · ${Number(summary.rawRowCount || 0).toLocaleString('en-IN')} rows → ${Number(summary.mergedFillCount || 0).toLocaleString('en-IN')} fills → ${Number(summary.tradeCount || 0).toLocaleString('en-IN')} trades (${Number(summary.closedTradeCount || 0)} closed, ${Number(summary.openTradeCount || 0)} open).</div>`;
 }
 
 function mergeImportedTradeWithExisting(importedTrade) {
   const existing = state.trades.find((item) => item.id === importedTrade.id);
   if (!existing) return importedTrade;
+  const { metrics: _metrics, ...historical } = existing;
   return normalizeTradePayload({
-    ...importedTrade,
-    strategy: existing.strategy || importedTrade.strategy,
-    plannedRisk: existing.plannedRisk || importedTrade.plannedRisk,
-    plannedStop: existing.plannedStop || importedTrade.plannedStop,
-    timeframe: existing.timeframe || importedTrade.timeframe || TRADE_TIMEFRAMES.AUTO,
+    ...historical, ...importedTrade,
+    strategy: existing.strategy || importedTrade.strategy, plannedRisk: existing.plannedRisk || importedTrade.plannedRisk,
+    plannedStop: existing.plannedStop || importedTrade.plannedStop, timeframe: existing.timeframe || importedTrade.timeframe,
     dipBeforeMove: existing.dipBeforeMove ?? importedTrade.dipBeforeMove,
-    mbiScore: existing.mbiScore ?? importedTrade.mbiScore,
-    tags: [...new Set([...(importedTrade.tags || []), ...(existing.tags || [])])],
-    notes: existing.notes || importedTrade.notes,
-    createdAt: existing.createdAt || importedTrade.createdAt,
-    updatedAt: new Date().toISOString(),
+    tags: [...new Set([...(importedTrade.tags || []), ...(existing.tags || [])])], notes: existing.notes || importedTrade.notes,
+    createdAt: existing.createdAt || importedTrade.createdAt, updatedAt: new Date().toISOString(),
   });
 }
 
@@ -1080,89 +551,43 @@ async function handleTradebookImport(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
-    if (!requireCloudAuth()) throw new Error('Sign in first before importing trades to the cloud journal.');
-    const text = await file.text();
-    const imported = importTradebookCsv(text, {
-      fileName: file.name,
-      allowLeadingSell: false,
-      allowReversal: true,
-    });
-
-    if (!imported.trades.length) {
-      throw new Error('No complete trade cycles were found in this CSV. Try exporting a longer history from your broker.');
-    }
-
-    const preparedTrades = imported.trades.map(mergeImportedTradeWithExisting);
-    const confirmMessage = [
-      `Import ${preparedTrades.length} trades from ${file.name}?`,
-      `${Number(imported.summary.rawRowCount || 0).toLocaleString('en-IN')} raw rows will become ${Number(imported.summary.mergedFillCount || 0).toLocaleString('en-IN')} merged fills.`,
-      imported.summary.skippedCount
-        ? `${Number(imported.summary.skippedCount).toLocaleString('en-IN')} unmatched closing fill groups will be skipped because this CSV starts after those positions were opened.`
-        : 'No unmatched closing rows were found.',
-      'Existing imported trades with the same ID will be refreshed while preserving your notes, tags, and setup fields.',
-    ].join('\n\n');
-
-    if (!window.confirm(confirmMessage)) return;
-
-    if (typeof state.storage.saveTrades === 'function') {
-      await state.storage.saveTrades(preparedTrades);
-    } else {
-      for (const trade of preparedTrades) {
-        await state.storage.saveTrade(trade);
-      }
-    }
-
-    state.ui.lastImportSummary = {
-      ...imported.summary,
-      fileName: file.name,
-      tradeCount: preparedTrades.length,
-    };
-    renderImportSummary();
-    showToast(`Imported ${preparedTrades.length} trades from tradebook CSV.`, 'success');
+    if (!isPrivateDataAvailable()) throw new Error('Sign in first before importing trades to the private journal.');
+    const imported = importTradebookCsv(await file.text(), { fileName: file.name, allowLeadingSell: false, allowReversal: true });
+    if (!imported.trades.length) throw new Error('No complete trade cycles were found in this CSV.');
+    const prepared = imported.trades.map(mergeImportedTradeWithExisting);
+    if (!window.confirm(`Import ${prepared.length} trades from ${file.name}? Existing matching trades keep their notes and hidden metadata.`)) return;
+    await state.storage.saveTrades(prepared);
+    state.ui.lastImportSummary = { ...imported.summary, fileName: file.name, tradeCount: prepared.length };
+    renderAll();
+    showToast(`Imported ${prepared.length} trades.`, 'success');
   } catch (error) {
     console.error(error);
-    showToast(error.message || 'Tradebook import failed.', 'error');
-  } finally {
-    event.target.value = '';
-  }
+    showToast(friendlyError(error, 'Tradebook import failed.'), 'error');
+  } finally { event.target.value = ''; }
 }
 
 function renderSettingsForm() {
-  $('#settingsPnlMethod').value = state.settings.pnlMethod || 'AVERAGE';
-  $('#settingsCurrency').value = state.settings.baseCurrency || 'INR';
+  refs.settingsPnlMethod.value = state.settings.pnlMethod || PNL_METHODS.AVERAGE;
+  refs.settingsCurrency.value = state.settings.baseCurrency || 'INR';
 }
 
 function exportCsv() {
   const rows = toCsvRows(getFilteredTradesRaw(), state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-  const csv = rows
-    .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  downloadTextFile(`trademaster-journal-${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv');
+  downloadTextFile(`trademaster-journal-${new Date().toISOString().slice(0, 10)}.csv`, rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
 }
 
 function exportJson() {
-  const payload = {
-    version: 2,
-    exportedAt: new Date().toISOString(),
-    settings: state.settings,
-    trades: state.trades,
-    winners: state.winners,
-  };
-  downloadTextFile(`trademaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2));
+  downloadTextFile(`trademaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), settings: state.settings, trades: state.trades, winners: state.winners }, null, 2));
 }
 
 async function handleDeleteTrade(tradeId) {
   const trade = state.trades.find((item) => item.id === tradeId);
-  if (!trade) return;
-  const confirmed = window.confirm(`Delete trade ${trade.symbol}?`);
-  if (!confirmed) return;
+  if (!trade || !window.confirm(`Delete trade ${trade.symbol || tradeId}?`)) return false;
   try {
     await state.storage.deleteTrade(tradeId);
     showToast('Trade deleted.', 'success');
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || 'Could not delete trade.', 'error');
-  }
+    return true;
+  } catch (error) { console.error(error); showToast(friendlyError(error, 'Could not delete trade.'), 'error'); return false; }
 }
 
 function handleJournalClick(event) {
@@ -1171,1156 +596,349 @@ function handleJournalClick(event) {
   const tradeId = button.dataset.tradeId;
   const trade = state.trades.find((item) => item.id === tradeId);
   if (!trade) return;
-  const action = button.dataset.action;
-  if (action === 'edit') openTradeModal(trade, 'edit');
-  if (action === 'duplicate') openTradeModal(deepClone(trade), 'duplicate');
-  if (action === 'delete') handleDeleteTrade(tradeId);
+  if (button.dataset.action === 'edit') openTradeModal(trade, 'edit');
+  if (button.dataset.action === 'duplicate') openTradeModal(deepClone(trade), 'duplicate');
+  if (button.dataset.action === 'delete') handleDeleteTrade(tradeId);
+  if (button.dataset.action === 'save-winner') openLinkedWinnerFromTrade(trade);
+  if (button.dataset.action === 'view-winner') {
+    const linked = state.winners.find((entry) => entry.sourceTradeId === trade.id);
+    if (linked) openWinnerModal(linked);
+  }
 }
 
 const WINNER_MOVE_BASES = 4;
 const WINNER_MOVE_EXPANSIONS = 3;
 
 function emptyWinnerMoveForm() {
-  return {
-    id: uid('move'),
-    movePct: '',
-    breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, () => ''),
-    bases: Array.from({ length: WINNER_MOVE_BASES }, () => ({
-      length: '',
-      depth: '',
-      expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, () => ''),
-    })),
-  };
+  return { id: uid('move'), movePct: '', breakoutExpansions: Array(WINNER_MOVE_EXPANSIONS).fill(''), bases: Array.from({ length: WINNER_MOVE_BASES }, () => ({ length: '', depth: '', expansions: Array(WINNER_MOVE_EXPANSIONS).fill('') })) };
 }
 
 function cloneWinnerMoveForForm(move = {}) {
-  return {
-    id: move.id || uid('move'),
-    movePct: move.movePct ?? move.move ?? move.totalMovePct ?? '',
-    breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, index) => move.breakoutExpansions?.[index] ?? ''),
-    bases: Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({
-      length: move.bases?.[baseIndex]?.length ?? '',
-      depth: move.bases?.[baseIndex]?.depth ?? '',
-      expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, expansionIndex) => move.bases?.[baseIndex]?.expansions?.[expansionIndex] ?? ''),
-    })),
-  };
+  return { id: move.id || uid('move'), movePct: move.movePct ?? move.move ?? move.totalMovePct ?? '', breakoutExpansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, i) => move.breakoutExpansions?.[i] ?? ''), bases: Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({ length: move.bases?.[baseIndex]?.length ?? '', depth: move.bases?.[baseIndex]?.depth ?? '', expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, i) => move.bases?.[baseIndex]?.expansions?.[i] ?? '') })) };
 }
 
 function readWinnerMoveCard(card) {
-  if (!card) return emptyWinnerMoveForm();
   const move = emptyWinnerMoveForm();
   move.id = card.dataset.moveId || uid('move');
   move.movePct = card.querySelector('[data-move-field="movePct"]')?.value ?? '';
-  move.breakoutExpansions = Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, index) => (
-    card.querySelector(`[data-breakout-expansion-index="${index}"]`)?.value ?? ''
-  ));
-  move.bases = Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({
-    length: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="length"]`)?.value ?? '',
-    depth: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="depth"]`)?.value ?? '',
-    expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, expansionIndex) => (
-      card.querySelector(`[data-base-index="${baseIndex}"][data-base-expansion-index="${expansionIndex}"]`)?.value ?? ''
-    )),
-  }));
+  move.breakoutExpansions = Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, i) => card.querySelector(`[data-breakout-expansion-index="${i}"]`)?.value ?? '');
+  move.bases = Array.from({ length: WINNER_MOVE_BASES }, (_, baseIndex) => ({ length: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="length"]`)?.value ?? '', depth: card.querySelector(`[data-base-index="${baseIndex}"][data-base-field="depth"]`)?.value ?? '', expansions: Array.from({ length: WINNER_MOVE_EXPANSIONS }, (_, i) => card.querySelector(`[data-base-index="${baseIndex}"][data-base-expansion-index="${i}"]`)?.value ?? '') }));
   return move;
 }
 
-function readWinnerMovesBuilderRaw() {
-  if (!refs.winnerMovesBuilder) return [];
-  return [...refs.winnerMovesBuilder.querySelectorAll('[data-move-card]')].map(readWinnerMoveCard);
-}
-
-function readWinnerMovesBuilder() {
-  return normalizeWinnerMoves(readWinnerMovesBuilderRaw());
-}
+function readWinnerMovesBuilderRaw() { return [...refs.winnerMovesBuilder.querySelectorAll('[data-move-card]')].map(readWinnerMoveCard); }
+function readWinnerMovesBuilder() { return normalizeWinnerMoves(readWinnerMovesBuilderRaw()); }
 
 function winnerMoveSummaryText(summary = {}) {
-  if (!summary.moveCount) return 'Move is empty. Add any expansion, base, or total move if you want this pattern included in analysis.';
-  const parts = [];
-  if (summary.totalMovePctAuto != null) parts.push(`Auto move ${formatPercent(summary.totalMovePctAuto, 1)}`);
-  if (summary.totalBases) parts.push(`${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`);
-  if (summary.avgExpansion != null) parts.push(`Avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
-  if (summary.maxExpansion != null) parts.push(`Best expansion ${formatPercent(summary.maxExpansion, 1)}`);
-  if (summary.maxBaseLength != null) parts.push(`Biggest base ${summary.maxBaseLength} bars`);
-  if (summary.maxBaseDepth != null) parts.push(`Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`);
-  return parts.join(' • ');
+  if (!summary.moveCount) return 'Move is empty. Add any expansion, base, or total move if useful.';
+  return [`${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`, summary.avgExpansion != null && `Avg expansion ${formatPercent(summary.avgExpansion, 1)}`, summary.maxExpansion != null && `Best expansion ${formatPercent(summary.maxExpansion, 1)}`, summary.maxBaseLength != null && `Biggest base ${summary.maxBaseLength} bars`, summary.maxBaseDepth != null && `Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`, summary.totalMovePctAuto != null && `Auto move ${formatPercent(summary.totalMovePctAuto, 1)}`].filter(Boolean).join(' · ');
 }
 
 function winnerMoveCardHtml(rawMove, moveIndex) {
   const move = cloneWinnerMoveForForm(rawMove);
-  const summary = summarizeWinnerPattern([move]);
-  return `
-    <div class="panel compact-top" data-move-card data-move-id="${escapeHtml(move.id)}">
-      <div class="section-row">
-        <div>
-          <div class="panel-title">Move ${moveIndex + 1}</div>
-          <div class="small-copy">Use E1B / E2B / E3B for the initial burst, then B1-B4 for each base with its post-base expansions.</div>
-        </div>
-        <button type="button" class="btn btn-ghost" data-move-builder-action="remove" data-move-id="${escapeHtml(move.id)}">Remove</button>
-      </div>
-      <div class="form-grid form-grid-4 compact-top">
-        <label class="field"><span>Move ${moveIndex + 1} total %</span><input data-move-field="movePct" type="number" step="0.1" placeholder="Auto if blank" value="${escapeHtml(String(move.movePct ?? ''))}" /></label>
-        <label class="field"><span>E1B %</span><input data-breakout-expansion-index="0" type="number" step="0.1" placeholder="6" value="${escapeHtml(String(move.breakoutExpansions[0] ?? ''))}" /></label>
-        <label class="field"><span>E2B %</span><input data-breakout-expansion-index="1" type="number" step="0.1" placeholder="5" value="${escapeHtml(String(move.breakoutExpansions[1] ?? ''))}" /></label>
-        <label class="field"><span>E3B %</span><input data-breakout-expansion-index="2" type="number" step="0.1" placeholder="4" value="${escapeHtml(String(move.breakoutExpansions[2] ?? ''))}" /></label>
-      </div>
-      ${move.bases.map((base, baseIndex) => `
-        <div class="form-grid form-grid-3 compact-top">
-          <label class="field"><span>B${baseIndex + 1} length</span><input data-base-index="${baseIndex}" data-base-field="length" type="number" step="0.1" placeholder="18" value="${escapeHtml(String(base.length ?? ''))}" /></label>
-          <label class="field"><span>B${baseIndex + 1} depth %</span><input data-base-index="${baseIndex}" data-base-field="depth" type="number" step="0.1" placeholder="12" value="${escapeHtml(String(base.depth ?? ''))}" /></label>
-          <label class="field"><span>E1B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="0" type="number" step="0.1" placeholder="7" value="${escapeHtml(String(base.expansions[0] ?? ''))}" /></label>
-          <label class="field"><span>E2B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="1" type="number" step="0.1" placeholder="5" value="${escapeHtml(String(base.expansions[1] ?? ''))}" /></label>
-          <label class="field"><span>E3B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="2" type="number" step="0.1" placeholder="4" value="${escapeHtml(String(base.expansions[2] ?? ''))}" /></label>
-        </div>
-      `).join('')}
-      <div class="panel-note compact-top">${escapeHtml(winnerMoveSummaryText(summary))}</div>
-    </div>
-  `;
+  return `<div class="panel compact-top" data-move-card data-move-id="${escapeHtml(move.id)}"><div class="section-row"><div class="panel-title">Move ${moveIndex + 1}</div><button type="button" class="btn btn-ghost" data-move-builder-action="remove" data-move-id="${escapeHtml(move.id)}">Remove</button></div><div class="form-grid form-grid-4 compact-top"><label class="field"><span>Total move %</span><input data-move-field="movePct" type="number" step="0.1" value="${escapeHtml(String(move.movePct ?? ''))}" /></label>${move.breakoutExpansions.map((value, i) => `<label class="field"><span>E${i + 1}B %</span><input data-breakout-expansion-index="${i}" type="number" step="0.1" value="${escapeHtml(String(value ?? ''))}" /></label>`).join('')}</div>${move.bases.map((base, baseIndex) => `<div class="form-grid form-grid-3 compact-top"><label class="field"><span>B${baseIndex + 1} length</span><input data-base-index="${baseIndex}" data-base-field="length" type="number" step="0.1" value="${escapeHtml(String(base.length ?? ''))}" /></label><label class="field"><span>B${baseIndex + 1} depth %</span><input data-base-index="${baseIndex}" data-base-field="depth" type="number" step="0.1" value="${escapeHtml(String(base.depth ?? ''))}" /></label>${base.expansions.map((value, i) => `<label class="field"><span>E${i + 1}B${baseIndex + 1} %</span><input data-base-index="${baseIndex}" data-base-expansion-index="${i}" type="number" step="0.1" value="${escapeHtml(String(value ?? ''))}" /></label>`).join('')}</div>`).join('')}<div class="panel-note compact-top">${escapeHtml(winnerMoveSummaryText(summarizeWinnerPattern([move])))}</div></div>`;
 }
 
 function renderWinnerMovesSummary() {
-  if (!refs.winnerMovesSummary) return;
   const summary = summarizeWinnerPattern(readWinnerMovesBuilderRaw());
-  if (!summary.moveCount) {
-    refs.winnerMovesSummary.innerHTML = 'No move pattern data yet. Add Move 1, Move 2, and any B1-B4 / E1B1 style numbers you want to study. All fields are optional.';
-    return;
-  }
-  const parts = [
-    `${summary.moveCount} move${summary.moveCount === 1 ? '' : 's'}`,
-    `${summary.totalBases} base${summary.totalBases === 1 ? '' : 's'}`,
-  ];
-  if (summary.avgExpansion != null) parts.push(`Avg expansion ${formatPercent(summary.avgExpansion, 1)}`);
-  if (summary.maxExpansion != null) parts.push(`Best expansion ${formatPercent(summary.maxExpansion, 1)}`);
-  if (summary.maxBaseLength != null) parts.push(`Biggest base ${summary.maxBaseLength} bars`);
-  if (summary.maxBaseDepth != null) parts.push(`Deepest base ${formatPercent(summary.maxBaseDepth, 1)}`);
-  if (summary.totalMovePctAuto != null) parts.push(`Auto total move ${formatPercent(summary.totalMovePctAuto, 1)}`);
-  refs.winnerMovesSummary.innerHTML = `<div class="text-strong">Pattern builder auto-summary</div><div>${escapeHtml(parts.join(' • '))}</div>`;
+  refs.winnerMovesSummary.textContent = summary.moveCount ? `${summary.moveCount} move${summary.moveCount === 1 ? '' : 's'} · ${winnerMoveSummaryText(summary)}` : 'No move pattern data yet.';
 }
 
 function renderWinnerMovesBuilder(moves = []) {
-  if (!refs.winnerMovesBuilder) return;
-  const items = (Array.isArray(moves) ? moves : []).map(cloneWinnerMoveForForm);
-  refs.winnerMovesBuilder.innerHTML = items.length
-    ? items.map((move, index) => winnerMoveCardHtml(move, index)).join('')
-    : '<div class="panel-note compact-top">No move legs added yet. Use <strong>Add move</strong> to capture Move 1, Move 2, and their bases/expansions. Every field is optional.</div>';
+  refs.winnerMovesBuilder.innerHTML = moves.length ? moves.map((move, i) => winnerMoveCardHtml(move, i)).join('') : '<div class="panel-note">No move legs added yet. Every pattern field is optional.</div>';
   renderWinnerMovesSummary();
-}
-
-function handleWinnerMovesBuilderClick(event) {
-  const button = event.target.closest('[data-move-builder-action]');
-  if (!button) return;
-  if (button.dataset.moveBuilderAction === 'remove') {
-    const moveId = button.dataset.moveId;
-    const items = readWinnerMovesBuilderRaw().filter((move) => move.id !== moveId);
-    renderWinnerMovesBuilder(items);
-  }
-}
-
-function createWinnerPatternLine(entry = {}) {
-  if (!(entry.pattern?.moveCount > 0)) return '';
-  const parts = [];
-  parts.push(`${entry.pattern.moveCount} move${entry.pattern.moveCount === 1 ? '' : 's'}`);
-  if (entry.pattern.totalBases) parts.push(`${entry.pattern.totalBases} bases`);
-  if (entry.pattern.avgExpansion != null) parts.push(`avg expansion ${formatPercent(entry.pattern.avgExpansion, 1)}`);
-  if (entry.pattern.maxExpansion != null) parts.push(`best expansion ${formatPercent(entry.pattern.maxExpansion, 1)}`);
-  if (entry.pattern.maxBaseLength != null) parts.push(`biggest base ${entry.pattern.maxBaseLength} bars`);
-  if (entry.pattern.maxBaseDepth != null) parts.push(`deepest base ${formatPercent(entry.pattern.maxBaseDepth, 1)}`);
-  if (entry.effectiveMove != null) parts.push(`auto move ${formatPercent(entry.effectiveMove, 1)}`);
-  return parts.join(' • ');
 }
 
 function clearWinnerForm() {
   refs.winnerForm.reset();
-  $('#winnerId').value = '';
-  $('#winnerImageStoragePath').value = '';
-  if ($('#winnerTimeframe')) $('#winnerTimeframe').value = 'SWING';
+  const id = uid('winner');
+  refs.winnerId.value = id;
+  refs.winnerTimeframe.value = 'SWING';
   refs.deleteWinnerBtn.classList.add('hidden');
-  refs.winnerModalTitle.textContent = 'New winner';
+  refs.winnerModalTitle.textContent = 'New winner example';
+  refs.winnerSourceTradeSection.classList.add('hidden');
+  setFormStatus(refs.winnerSaveStatus);
   clearWinnerImageDraft();
   refs.winnerImagePreview.innerHTML = winnerImageEmptyState();
   renderWinnerMovesBuilder([]);
+  state.ui.winnerDraft = { id, mode: 'new', dirty: false, saving: false, operationId: uid('winner-save') };
+  modalWinnerSnapshot = null;
 }
 
 function syncWinnerImagePreview() {
   const draft = state.ui.winnerImageDraft?.prepared;
-  const url = $('#winnerImageUrl')?.value?.trim();
-  const storagePath = $('#winnerImageStoragePath')?.value?.trim();
-
+  const url = refs.winnerImageUrl.value.trim();
+  const storagePath = refs.winnerImageStoragePath.value.trim();
   if (draft) {
-    refs.winnerImagePreview.innerHTML = `
-      <div class="preview-wrap">
-        <img class="modal-thumb" src="${escapeHtml(draft.previewUrl)}" alt="Winner screenshot preview" />
-        <div class="preview-meta small-copy">
-          <div class="text-strong">Selected screenshot • uploads when you save</div>
-          <div>${escapeHtml(formatBytes(draft.sizeBytes))} • ${escapeHtml(String(draft.width))}×${escapeHtml(String(draft.height))} • ${escapeHtml(draft.contentType)}</div>
-          <div>Compressed from ${escapeHtml(formatBytes(draft.originalSizeBytes))} to keep storage usage low.</div>
-        </div>
-      </div>
-    `;
+    refs.winnerImagePreview.innerHTML = `<div class="preview-wrap"><img class="modal-thumb" src="${escapeHtml(draft.previewUrl)}" alt="Prepared screenshot preview" /><div class="preview-meta small-copy"><div class="text-strong">Prepared screenshot · uploads when you save</div><div>${escapeHtml(formatBytes(draft.sizeBytes))} · ${draft.width}×${draft.height} · ${escapeHtml(draft.contentType)}</div></div></div>`;
     return;
   }
-
-  if (!url) {
-    refs.winnerImagePreview.innerHTML = winnerImageEmptyState();
-    return;
-  }
-
-  if (!looksLikeViewableImageUrl(url)) {
-    refs.winnerImagePreview.innerHTML = `
-      <div class="preview-meta small-copy">
-        <div class="text-strong">Saved image reference</div>
-        <div>The value will be saved, but it is not a direct browser-viewable image URL.</div>
-      </div>
-    `;
-    return;
-  }
-
-  refs.winnerImagePreview.innerHTML = `
-    <div class="preview-wrap">
-      <img class="modal-thumb" src="${escapeHtml(url)}" alt="Winner preview" />
-      <div class="preview-meta small-copy">
-        <div class="text-strong">${storagePath ? 'Stored screenshot' : 'External image URL'}</div>
-        <div>${storagePath ? 'This image is stored in Firebase Storage for this winner record.' : 'This image is being referenced from the URL you pasted.'}</div>
-      </div>
-    </div>
-  `;
+  if (!url) { refs.winnerImagePreview.innerHTML = winnerImageEmptyState(); return; }
+  refs.winnerImagePreview.innerHTML = looksLikeViewableImageUrl(url)
+    ? `<div class="preview-wrap"><img class="modal-thumb" src="${escapeHtml(url)}" alt="Winner chart preview" /><div class="preview-meta small-copy"><div class="text-strong">${storagePath ? 'Stored screenshot' : 'External image URL'}</div><div>${storagePath ? 'Saved in Firebase Storage.' : 'Referenced from the URL you supplied.'}</div></div></div>`
+    : '<div class="preview-meta small-copy"><div class="text-strong">Saved image reference</div><div>This value is not a direct browser-viewable image URL.</div></div>';
 }
 
 async function handleWinnerImageFileChange(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  if (!canUploadWinnerImages()) {
-    event.target.value = '';
-    showToast('Screenshot uploads need cloud mode, Google sign-in, and Firebase Storage configured.', 'error');
-    return;
-  }
+  if (!canUploadWinnerImages()) { event.target.value = ''; showToast('Sign in with any Firebase provider and configure Storage before uploading screenshots.', 'error'); return; }
   try {
     clearWinnerImageDraft();
-    showToast('Compressing screenshot…');
+    setFormStatus(refs.winnerSaveStatus, 'Preparing screenshot…', 'busy');
     const prepared = await prepareImageForUpload(file, { maxDimension: 1600, quality: 0.82 });
     state.ui.winnerImageDraft = { prepared };
+    state.ui.winnerDraft.dirty = true;
     syncWinnerImagePreview();
-    showToast(`Screenshot ready • ${formatBytes(prepared.sizeBytes)}`, 'success');
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || 'Could not prepare the screenshot.', 'error');
-    clearWinnerImageDraft();
-    syncWinnerImagePreview();
-  }
+    setFormStatus(refs.winnerSaveStatus, 'Screenshot ready. Save the example to upload it.', 'success');
+  } catch (error) { console.error(error); clearWinnerImageDraft(); syncWinnerImagePreview(); setFormStatus(refs.winnerSaveStatus, friendlyError(error, 'Could not prepare the screenshot.'), 'error'); }
 }
 
-function clearWinnerImageSelection() {
-  clearWinnerImageDraft();
-  $('#winnerImageUrl').value = '';
-  $('#winnerImageStoragePath').value = '';
-  syncWinnerImagePreview();
-}
+function clearWinnerImageSelection() { clearWinnerImageDraft(); refs.winnerImageUrl.value = ''; refs.winnerImageStoragePath.value = ''; syncWinnerImagePreview(); }
 
 function openWinnerModal(entry = null) {
   clearWinnerForm();
   if (entry) {
-    $('#winnerId').value = entry.id || '';
-    $('#winnerStockName').value = entry.stockName || '';
-    $('#winnerSector').value = entry.sector || '';
-    $('#winnerType').value = entry.type || '';
-    $('#winnerSetup').value = entry.setup || '';
-    $('#winnerTimeframe').value = entry.timeframe || 'SWING';
-    $('#winnerBreakoutDate').value = entry.breakoutDate || '';
-    $('#winnerCircuits').value = entry.circuits ?? '';
-    $('#winnerPeriod').value = entry.period || '';
-    $('#winnerMbiScore').value = entry.mbiScore ?? '';
-    $('#winnerInitialMove').value = entry.initialMove ?? '';
-    $('#winnerBaseLength').value = entry.baseLength ?? '';
-    $('#winnerMove').value = entry.move ?? '';
-    $('#winnerDipBeforeMove').value = entry.dipBeforeMove ?? '';
-    $('#winnerStage4Decline').value = entry.stage4Decline ?? '';
-    $('#winnerImageUrl').value = entry.imageUrl || '';
-    $('#winnerImageStoragePath').value = entry.imageStoragePath || '';
-    $('#winnerTags').value = stringifyTags(entry.tags || []);
-    $('#winnerNotes').value = entry.notes || '';
-    refs.winnerModalTitle.textContent = `Edit ${entry.stockName || 'winner'}`;
-    refs.deleteWinnerBtn.classList.remove('hidden');
-    renderWinnerMovesBuilder(entry.moves || []);
-    syncWinnerImagePreview();
-  } else {
-    renderWinnerMovesBuilder([]);
+    modalWinnerSnapshot = deepClone(entry);
+    refs.winnerId.value = entry.id || refs.winnerId.value;
+    refs.winnerStockName.value = entry.stockName || ''; refs.winnerSector.value = entry.sector || ''; refs.winnerType.value = entry.type || '';
+    refs.winnerSetup.value = entry.setup || ''; refs.winnerTimeframe.value = entry.timeframe || 'SWING'; refs.winnerBreakoutDate.value = entry.breakoutDate || '';
+    refs.winnerCircuits.value = entry.circuits ?? ''; refs.winnerPeriod.value = entry.period || ''; refs.winnerInitialMove.value = entry.initialMove ?? '';
+    refs.winnerBaseLength.value = entry.baseLength ?? ''; refs.winnerMove.value = entry.move ?? ''; refs.winnerDipBeforeMove.value = entry.dipBeforeMove ?? '';
+    refs.winnerStage4Decline.value = entry.stage4Decline ?? ''; refs.winnerImageUrl.value = entry.imageUrl || ''; refs.winnerImageStoragePath.value = entry.imageStoragePath || '';
+    refs.winnerTags.value = stringifyTags(entry.tags || []); refs.winnerNotes.value = entry.notes || ''; refs.winnerModalTitle.textContent = `Edit ${entry.stockName || 'winner example'}`;
+    refs.deleteWinnerBtn.classList.remove('hidden'); renderWinnerMovesBuilder(entry.moves || []); syncWinnerImagePreview();
+    if (entry.sourceTradeId) { refs.winnerSourceTradeSection.innerHTML = sourceTradeSummary(entry); refs.winnerSourceTradeSection.classList.remove('hidden'); }
+    state.ui.winnerDraft = { ...state.ui.winnerDraft, id: refs.winnerId.value, mode: 'edit', dirty: false };
   }
-  refs.winnerModal.classList.remove('hidden');
-  refs.winnerModal.setAttribute('aria-hidden', 'false');
+  refs.winnerModal.classList.remove('hidden'); refs.winnerModal.setAttribute('aria-hidden', 'false');
+  refs.winnerStockName.focus();
 }
 
-function closeWinnerModal() {
-  clearWinnerImageDraft();
-  refs.winnerModal.classList.add('hidden');
-  refs.winnerModal.setAttribute('aria-hidden', 'true');
+function closeWinnerModal(force = false) {
+  if (!force && state.ui.winnerDraft?.dirty && !window.confirm('Discard this unsaved winner example?')) return false;
+  clearWinnerImageDraft(); refs.winnerModal.classList.add('hidden'); refs.winnerModal.setAttribute('aria-hidden', 'true'); state.ui.winnerDraft = null; modalWinnerSnapshot = null; return true;
 }
 
 function readWinnerForm() {
-  const existing = state.winners.find((item) => item.id === ($('#winnerId').value || ''));
-  return normalizeWinnerPayload({
-    id: $('#winnerId').value || uid('winner'),
-    stockName: $('#winnerStockName').value,
-    sector: $('#winnerSector').value,
-    type: $('#winnerType').value,
-    setup: $('#winnerSetup').value,
-    timeframe: $('#winnerTimeframe').value,
-    breakoutDate: $('#winnerBreakoutDate').value,
-    circuits: $('#winnerCircuits').value,
-    period: $('#winnerPeriod').value,
-    mbiScore: $('#winnerMbiScore').value,
-    initialMove: $('#winnerInitialMove').value,
-    baseLength: $('#winnerBaseLength').value,
-    move: $('#winnerMove').value,
-    dipBeforeMove: $('#winnerDipBeforeMove').value,
-    stage4Decline: $('#winnerStage4Decline').value,
-    imageUrl: $('#winnerImageUrl').value,
-    imageStoragePath: $('#winnerImageStoragePath').value,
-    imageBytes: existing?.imageBytes ?? null,
-    imageContentType: existing?.imageContentType || '',
-    imageWidth: existing?.imageWidth ?? null,
-    imageHeight: existing?.imageHeight ?? null,
-    tags: parseTags($('#winnerTags').value),
-    notes: $('#winnerNotes').value,
-    moves: readWinnerMovesBuilder(),
-    createdAt: existing?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  const { pattern: _pattern, effectiveInitialMove: _effectiveInitialMove, effectiveBaseLength: _effectiveBaseLength, effectiveMove: _effectiveMove, ...historical } = modalWinnerSnapshot || {};
+  return normalizeWinnerPayload({ ...historical, id: refs.winnerId.value, stockName: refs.winnerStockName.value, sector: refs.winnerSector.value, type: refs.winnerType.value, setup: refs.winnerSetup.value, timeframe: refs.winnerTimeframe.value, breakoutDate: refs.winnerBreakoutDate.value, circuits: refs.winnerCircuits.value, period: refs.winnerPeriod.value, initialMove: refs.winnerInitialMove.value, baseLength: refs.winnerBaseLength.value, move: refs.winnerMove.value, dipBeforeMove: refs.winnerDipBeforeMove.value, stage4Decline: refs.winnerStage4Decline.value, imageUrl: refs.winnerImageUrl.value, imageStoragePath: refs.winnerImageStoragePath.value, tags: parseTags(refs.winnerTags.value), notes: refs.winnerNotes.value, moves: readWinnerMovesBuilder(), createdAt: modalWinnerSnapshot?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() });
+}
+
+function isDefinitivePersistenceError(error) {
+  if (state.mode === 'demo') return true;
+  return ['permission-denied', 'invalid-argument', 'failed-precondition', 'not-found', 'already-exists', 'storage/unauthorized', 'storage/invalid-format'].includes(String(error?.code || ''));
+}
+
+async function reconcileWinnerWrite(entry, uploadedPath) {
+  try {
+    const saved = await state.storage.getWinner(entry.id);
+    if (!saved) return { state: 'unknown' };
+    if (saved.imageStoragePath === uploadedPath) return { state: 'committed', entry: saved };
+    return { state: 'different', entry: saved };
+  } catch { return { state: 'unknown' }; }
+}
+
+async function saveWinnerForm(event) {
+  event.preventDefault();
+  const draft = state.ui.winnerDraft;
+  if (!draft || draft.saving) return;
+  draft.saving = true; refs.saveWinnerBtn.disabled = true; setFormStatus(refs.winnerSaveStatus, state.ui.winnerImageDraft?.prepared ? 'Uploading screenshot…' : 'Saving example…', 'busy');
+  const epoch = state.sessionEpoch;
+  let uploadedPath = ''; let pathToDelete = ''; let entry;
+  try {
+    entry = readWinnerForm();
+    if (!entry.stockName && !entry.notes && !entry.imageUrl && !entry.moves.length) throw new Error('Add a stock name, note, or chart detail before saving.');
+    const existingLocal = state.winners.find((item) => item.id === entry.id);
+    let existing = existingLocal;
+    if (!existing && entry.sourceTradeId) existing = await state.storage.getWinner(entry.id);
+    if (epoch !== state.sessionEpoch) throw new Error('Account changed while saving. Please reopen this example for the current account.');
+    const existingPath = existing?.imageStoragePath || '';
+    const existingUrl = existing?.imageUrl || '';
+    const pending = state.ui.winnerImageDraft?.prepared;
+    if (pending) {
+      if (!canUploadWinnerImages()) throw new Error('Sign in and configure Firebase Storage before uploading screenshots.');
+      const upload = await state.storage.uploadWinnerImage({ winnerId: entry.id, blob: pending.blob, fileName: pending.fileName, contentType: pending.contentType });
+      if (epoch !== state.sessionEpoch) throw new Error('Account changed while uploading. The new image was not attached to this account.');
+      uploadedPath = upload.storagePath; entry.imageUrl = upload.downloadUrl; entry.imageStoragePath = upload.storagePath; entry.imageBytes = upload.sizeBytes; entry.imageContentType = upload.contentType; entry.imageWidth = pending.width; entry.imageHeight = pending.height;
+      if (existingPath && existingPath !== uploadedPath) pathToDelete = existingPath;
+    } else if (!entry.imageUrl) {
+      if (existingPath) pathToDelete = existingPath;
+      entry.imageStoragePath = ''; entry.imageBytes = null; entry.imageContentType = ''; entry.imageWidth = null; entry.imageHeight = null;
+    } else if (entry.imageUrl !== existingUrl && existingPath) {
+      pathToDelete = existingPath; entry.imageStoragePath = ''; entry.imageBytes = null; entry.imageContentType = ''; entry.imageWidth = null; entry.imageHeight = null;
+    }
+    if (entry.sourceTradeId && !existing) {
+      const result = await state.storage.createWinnerIfAbsent(entry);
+      if (!result.created) {
+        if (uploadedPath) await state.storage.deleteWinnerImage(uploadedPath);
+        closeWinnerModal(true); openWinnerModal(normalizeWinnerPayload(result.entry)); showToast('This source trade already has a winner example; nothing was overwritten.', 'info'); return;
+      }
+    } else {
+      await state.storage.saveWinner(entry);
+    }
+    if (epoch !== state.sessionEpoch) return;
+    if (pathToDelete && pathToDelete !== uploadedPath) {
+      try { await state.storage.deleteWinnerImage(pathToDelete); } catch (cleanupError) { console.warn('Old screenshot cleanup failed', cleanupError); setFormStatus(refs.winnerSaveStatus, 'Example saved, but the old screenshot could not be cleaned up. It remains usable.', 'error'); }
+    }
+    closeWinnerModal(true); showToast(state.mode === 'demo' ? 'Winner example saved locally.' : 'Winner example saved to Firebase.', 'success');
+  } catch (error) {
+    console.error(error);
+    let message = friendlyError(error, 'Could not save winner example.');
+    if (uploadedPath) {
+      if (isDefinitivePersistenceError(error)) {
+        try { await state.storage.deleteWinnerImage(uploadedPath); } catch (cleanupError) { console.warn('Uploaded screenshot rollback failed', cleanupError); message += ' Cleanup of the new screenshot also needs attention.'; }
+      } else {
+        const reconciliation = await reconcileWinnerWrite(entry || { id: draft.id }, uploadedPath);
+        if (reconciliation.state === 'committed') message = 'Firebase may have completed the save. The uploaded screenshot is retained; reload before retrying.';
+        else message += ' The save result is uncertain, so the uploaded screenshot was retained for reconciliation.';
+      }
+    }
+    if (epoch === state.sessionEpoch) setFormStatus(refs.winnerSaveStatus, message, 'error');
+  } finally { if (epoch === state.sessionEpoch) { draft.saving = false; refs.saveWinnerBtn.disabled = false; } }
 }
 
 async function handleDeleteWinner(entryId) {
   const entry = state.winners.find((item) => item.id === entryId);
-  if (!entry) return;
-  const confirmed = window.confirm(`Delete winner record ${entry.stockName || 'this entry'}?`);
-  if (!confirmed) return;
+  if (!entry || !window.confirm(`Delete winner example ${entry.stockName || entryId}?`)) return false;
   try {
-    if (entry.imageStoragePath) {
-      await state.storage.deleteWinnerImage(entry.imageStoragePath);
-    }
     await state.storage.deleteWinner(entryId);
-    showToast('Winner record deleted.', 'success');
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || 'Could not delete winner record.', 'error');
-  }
+    if (entry.imageStoragePath) {
+      try { await state.storage.deleteWinnerImage(entry.imageStoragePath); } catch (cleanupError) { console.warn('Deleted winner image cleanup failed', cleanupError); showToast('Example deleted, but its screenshot cleanup failed. Check Firebase Storage later.', 'error'); }
+    }
+    showToast('Winner example deleted.', 'success'); return true;
+  } catch (error) { console.error(error); setFormStatus(refs.winnerSaveStatus, friendlyError(error, 'Could not delete winner example.'), 'error'); showToast(friendlyError(error, 'Could not delete winner example.'), 'error'); return false; }
 }
 
 function handleWinnerTableClick(event) {
   const button = event.target.closest('[data-winner-action]');
   if (!button) return;
-  const entryId = button.dataset.winnerId;
-  const entry = state.winners.find((item) => item.id === entryId);
-  if (!entry) return;
-  if (button.dataset.winnerAction === 'edit') openWinnerModal(entry);
+  const action = button.dataset.winnerAction;
+  if (action === 'preview-image') { openImagePreview(button.dataset.imageUrl, button.dataset.imageTitle); return; }
+  if (action === 'view-source') { openSourceTrade(button.dataset.sourceTradeId); return; }
+  const entry = state.winners.find((item) => item.id === button.dataset.winnerId);
+  if (entry && action === 'edit') openWinnerModal(entry);
 }
+
+function openSourceTrade(tradeId) {
+  const trade = state.trades.find((item) => item.id === tradeId);
+  if (!trade) { showToast('Original trade unavailable. The saved winner snapshot remains available.', 'info'); return; }
+  switchTab('journal'); openTradeModal(trade, 'edit');
+}
+
+function openImagePreview(url, title = 'Chart preview') {
+  if (!looksLikeViewableImageUrl(url)) return;
+  refs.imagePreview.src = url; refs.imagePreview.alt = title; refs.imagePreviewTitle.textContent = title; refs.imagePreviewModal.classList.remove('hidden'); refs.imagePreviewModal.setAttribute('aria-hidden', 'false'); refs.closeImagePreviewBtn.focus();
+}
+
+function closeImagePreview() { refs.imagePreview.src = ''; refs.imagePreviewModal.classList.add('hidden'); refs.imagePreviewModal.setAttribute('aria-hidden', 'true'); }
 
 function renderCalculator() {
-  const solver = solvePositionCalculator({
-    capital: $('#calcCapital').value,
-    riskPercent: $('#calcRiskPercent').value,
-    entry: $('#calcEntry').value,
-    slPrice: $('#calcSlPrice').value,
-    slPercent: $('#calcSlPercent').value,
-    positionSize: $('#calcPositionSize').value,
-    riskAmount: $('#calcRiskAmount').value,
-    lastEdited: $('#calcLastEdited').value,
-  });
-
-  syncRiskPresetChips();
-  $('#calcQty').textContent = String(solver.qty || 0);
-  $('#calcValue').textContent = formatCurrency(solver.totalValue || 0, getCurrency());
-  $('#calcActualRisk').textContent = formatCurrency(solver.actualRisk || 0, getCurrency());
-  $('#calcPositionPercent').textContent = formatPercent(solver.positionPercent || 0, 1);
-  $('#calcRiskCapitalPercent').textContent = formatPercent(solver.riskOfCapital || 0, 2);
-  $('#calcTrailLocked').textContent = formatCurrency(lockedPnl(solver.entry, $('#calcTrailPrice').value, solver.qty, solver.long), getCurrency());
-  $('#calcDirectionPill').className = cn('pill', solver.entry ? (solver.long ? 'pill-green' : 'pill-red') : 'pill-muted');
-  $('#calcDirectionPill').textContent = solver.entry ? (solver.long ? 'Long setup' : 'Short setup') : 'Waiting for setup';
-  $('#calcHint').textContent = $('#calcLastEdited').value === 'positionSize'
-    ? 'Calculator is currently solving from position size.'
-    : $('#calcLastEdited').value === 'riskAmount'
-      ? 'Calculator is currently solving from risk amount.'
-      : 'Calculator is solving from entry + stop using account risk.';
-
-  if (document.activeElement !== $('#calcSlPrice')) $('#calcSlPrice').value = solver.slPrice || '';
-  if (document.activeElement !== $('#calcSlPercent')) $('#calcSlPercent').value = solver.slPercent || '';
-  if (document.activeElement !== $('#calcPositionSize')) $('#calcPositionSize').value = solver.positionSize || '';
-  if (document.activeElement !== $('#calcRiskAmount')) $('#calcRiskAmount').value = solver.riskAmount || '';
-
-  const target = projectTarget({
-    entry: solver.entry,
-    slPrice: solver.slPrice,
-    qty: solver.qty,
-    targetR: $('#targetR').value,
-    targetPercent: $('#targetPercent').value,
-    exitPrice: $('#targetExitPrice').value,
-  });
-  if (document.activeElement !== $('#targetExitPrice')) $('#targetExitPrice').value = target.exitPrice || '';
-  if (document.activeElement !== $('#targetR')) $('#targetR').value = target.targetR || '';
-  if (document.activeElement !== $('#targetPercent')) $('#targetPercent').value = target.targetPercent || '';
-  $('#targetPnl').textContent = formatCurrency(target.pnl || 0, getCurrency());
-  $('#targetPnl').className = cn('metric-value', (target.pnl || 0) >= 0 ? 'positive' : 'negative');
-  $('#targetNetPnl').textContent = formatCurrency(target.charges.net || 0, getCurrency());
-  $('#targetNetPnl').className = cn('metric-value', (target.charges.net || 0) >= 0 ? 'positive' : 'negative');
-  $('#chargesBrokerage').textContent = formatCurrency(target.charges.brokerage || 0, getCurrency());
-  $('#chargesStt').textContent = formatCurrency(target.charges.stt || 0, getCurrency());
-  $('#chargesOther').textContent = formatCurrency(target.charges.other || 0, getCurrency());
-  $('#chargesTotal').textContent = formatCurrency(target.charges.total || 0, getCurrency());
+  const solver = solvePositionCalculator({ capital: refs.calcCapital.value, riskPercent: refs.calcRiskPercent.value, entry: refs.calcEntry.value, slPrice: refs.calcSlPrice.value, slPercent: refs.calcSlPercent.value, positionSize: refs.calcPositionSize.value, riskAmount: refs.calcRiskAmount.value, lastEdited: refs.calcLastEdited.value });
+  $$('.risk-chip').forEach((chip) => chip.classList.toggle('active', Number(chip.dataset.risk) === Number(refs.calcRiskPercent.value || 0)));
+  refs.calcQty.textContent = String(solver.qty || 0); refs.calcValue.textContent = formatCurrency(solver.totalValue || 0, getCurrency()); refs.calcActualRisk.textContent = formatCurrency(solver.actualRisk || 0, getCurrency()); refs.calcPositionPercent.textContent = formatPercent(solver.positionPercent || 0, 1); refs.calcRiskCapitalPercent.textContent = formatPercent(solver.riskOfCapital || 0, 2); refs.calcTrailLocked.textContent = formatCurrency(lockedPnl(solver.entry, refs.calcTrailPrice.value, solver.qty, solver.long), getCurrency()); refs.calcDirectionPill.className = cn('pill', solver.entry ? solver.long ? 'pill-green' : 'pill-red' : 'pill-muted'); refs.calcDirectionPill.textContent = solver.entry ? solver.long ? 'Long setup' : 'Short setup' : 'Waiting for setup'; refs.calcHint.textContent = refs.calcLastEdited.value === 'positionSize' ? 'Solving from position size.' : refs.calcLastEdited.value === 'riskAmount' ? 'Solving from risk amount.' : 'Solving from entry + stop-loss using account risk.';
+  if (document.activeElement !== refs.calcSlPrice) refs.calcSlPrice.value = solver.slPrice || ''; if (document.activeElement !== refs.calcSlPercent) refs.calcSlPercent.value = solver.slPercent || ''; if (document.activeElement !== refs.calcPositionSize) refs.calcPositionSize.value = solver.positionSize || ''; if (document.activeElement !== refs.calcRiskAmount) refs.calcRiskAmount.value = solver.riskAmount || '';
+  const target = projectTarget({ entry: solver.entry, slPrice: solver.slPrice, qty: solver.qty, targetR: refs.targetR.value, targetPercent: refs.targetPercent.value, exitPrice: refs.targetExitPrice.value });
+  if (document.activeElement !== refs.targetExitPrice) refs.targetExitPrice.value = target.exitPrice || ''; if (document.activeElement !== refs.targetR) refs.targetR.value = target.targetR || ''; if (document.activeElement !== refs.targetPercent) refs.targetPercent.value = target.targetPercent || '';
+  refs.targetPnl.textContent = formatCurrency(target.pnl || 0, getCurrency()); refs.targetNetPnl.textContent = formatCurrency(target.charges.net || 0, getCurrency()); refs.chargesBrokerage.textContent = formatCurrency(target.charges.brokerage || 0, getCurrency()); refs.chargesStt.textContent = formatCurrency(target.charges.stt || 0, getCurrency()); refs.chargesOther.textContent = formatCurrency(target.charges.other || 0, getCurrency()); refs.chargesTotal.textContent = formatCurrency(target.charges.total || 0, getCurrency());
 }
 
-function renderSignalCards(items, emptyText, tone = 'neutral') {
-  if (!items?.length) return `<div class="signal ${tone}">${escapeHtml(emptyText)}</div>`;
-  return items.map((item) => `
-      <div class="signal ${escapeHtml(item.level || 'neutral')}">
-        ${item.label ? `<strong>${escapeHtml(item.label)}:</strong> ` : ''}${escapeHtml(item.text || '')}
-      </div>
-    `).join('');
-}
-
-function formatMbiInputValue(value, digits = 2) {
-  if (value == null || !Number.isFinite(Number(value))) return '';
-  const rounded = round(Number(value), digits);
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
-}
-
-function fillMbiInputsFromRow(row) {
-  if (!row) return;
-  $('#mbiA20').value = formatMbiInputValue(row.a20);
-  $('#mbiA50').value = formatMbiInputValue(row.a50);
-  $('#mbiA200').value = formatMbiInputValue(row.a200);
-  $('#mbiNb').value = formatMbiInputValue(row.nb);
-  $('#mbiWh').value = formatMbiInputValue(row.wh);
-  $('#mbiWl').value = formatMbiInputValue(row.wl);
-  $('#mbiBosf').value = formatMbiInputValue(row.bosf);
-  $('#mbiUhlh').value = formatMbiInputValue(row.uhlh);
-  $('#mbiVol').value = formatMbiInputValue(row.vol);
-  $('#mbiAdv').value = formatMbiInputValue(row.adv);
-  $('#mbiNhl').value = formatMbiInputValue(row.nhl);
-  $('#mbiBd').value = formatMbiInputValue(row.bd);
-  $('#mbiAdv3Pts').value = formatMbiInputValue(row.adv3Pts);
-  $('#mbiNewHigh3Pts').value = formatMbiInputValue(row.newHigh3Pts);
-}
-
-function renderMbiHistoryVisuals() {
-  const rows = state.ui.mbiHistoryRows || [];
-  if (!refs.mbiHistoryTable) return;
-
-  if (!rows.length) {
-    refs.mbiHistoryMeta.textContent = 'No Dashboard history imported yet. You can still type the fields manually below.';
-    refs.mbiHistoryTable.innerHTML = 'Import Dashboard A:AG rows to see recent CurrentScore and SuperMBI history.';
-    refs.mbiHistoryTable.className = 'table-wrap empty-state';
-    chartManager.renderLine('mbiHistory', $('#mbiHistoryChart'), [], [], 'SuperMBI history');
-    return;
-  }
-
-  const summary = state.ui.lastMbiImportSummary || {};
-  refs.mbiHistoryMeta.textContent = `${summary.rowCount || rows.length} Dashboard rows parsed${summary.latestDate ? ` • latest ${summary.latestDate}` : ''}${summary.readyRowCount ? ` • ${summary.readyRowCount} rows had full SuperMBI output` : ''}. Latest imported row auto-filled the manual fields.`;
-
-  const displayRows = rows.slice(-10).reverse();
-  refs.mbiHistoryTable.className = 'table-wrap';
-  refs.mbiHistoryTable.innerHTML = `
-    <table class="guide-table">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>CurrentScore</th>
-          <th>Adv3 pts</th>
-          <th>NewHigh3 pts</th>
-          <th>SuperMBI</th>
-          <th>Zone</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${displayRows.map((row) => `
-          <tr>
-            <td>${escapeHtml(row.date || '—')}</td>
-            <td>${row.currentScore != null ? round(row.currentScore, 0) : '—'}</td>
-            <td>${row.adv3Pts != null ? round(row.adv3Pts, 2).toFixed(2) : '—'}</td>
-            <td>${row.newHigh3Pts != null ? round(row.newHigh3Pts, 2).toFixed(2) : '—'}</td>
-            <td>${row.superMbi != null ? round(row.superMbi, 2).toFixed(2) : '—'}</td>
-            <td>${escapeHtml(row.zone || 'Need 3 rows')}</td>
-            <td>${escapeHtml(row.action || 'Need 3 rows')}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-
-  const chartRows = rows.filter((row) => row.superMbi != null).slice(-20);
-  chartManager.renderLine(
-    'mbiHistory',
-    $('#mbiHistoryChart'),
-    chartRows.map((row) => row.date || ''),
-    chartRows.map((row) => round(row.superMbi, 2)),
-    'SuperMBI history',
-  );
-}
-
-function applyMbiHistoryText(text, sourceLabel = 'Pasted Dashboard history') {
-  const result = calculateSuperMbiHistoryFromText(text);
-  if (!result.rows.length) throw new Error('No usable Dashboard A:AG rows found. Paste the exported Dashboard CSV with A:AG columns.');
-  state.ui.mbiHistoryRows = result.rows;
-  state.ui.mbiHistorySource = sourceLabel;
-  state.ui.lastMbiImportSummary = result.summary;
-  if (result.latest) fillMbiInputsFromRow(result.latest);
-  if (refs.mbiHistoryText && sourceLabel !== 'Pasted Dashboard history') {
-    refs.mbiHistoryText.value = text;
-  }
-  renderMbi();
-  if (!result.summary.readyRowCount) {
-    showToast('Imported rows, but you still need at least 3 rows for Adv3 and NewHigh3.', 'error');
-    return;
-  }
-  showToast(`SuperMBI updated from ${result.summary.rowCount} Dashboard rows.`, 'success');
-}
-
-async function handleMbiHistoryFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    applyMbiHistoryText(text, file.name || 'Dashboard CSV');
-    event.target.value = '';
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || 'Dashboard history import failed.', 'error');
-  }
-}
-
-function clearMbiHistory() {
-  state.ui.mbiHistoryRows = [];
-  state.ui.mbiHistorySource = '';
-  state.ui.lastMbiImportSummary = null;
-  if (refs.mbiHistoryText) refs.mbiHistoryText.value = '';
-  renderMbi();
-  showToast('Imported SuperMBI history cleared.', 'success');
-}
-
-function renderMbi() {
-  const latestHistoryRow = state.ui.mbiHistoryRows.length ? state.ui.mbiHistoryRows[state.ui.mbiHistoryRows.length - 1] : null;
-  const mbi = calculateMbi({
-    a20: $('#mbiA20').value,
-    a50: $('#mbiA50').value,
-    a200: $('#mbiA200').value,
-    nb: $('#mbiNb').value,
-    wh: $('#mbiWh').value,
-    wl: $('#mbiWl').value,
-    bosf: $('#mbiBosf').value,
-    uhlh: $('#mbiUhlh').value,
-    vol: $('#mbiVol').value,
-    adv: $('#mbiAdv').value,
-    nhl: $('#mbiNhl').value,
-    bd: $('#mbiBd').value,
-    adv3Pts: $('#mbiAdv3Pts').value,
-    newHigh3Pts: $('#mbiNewHigh3Pts').value,
-    latestDate: latestHistoryRow?.date || '',
-  });
-
-  if (!mbi.ready) {
-    $('#mbiScore').textContent = mbi.currentScore == null ? '—' : String(round(mbi.currentScore, 0));
-    $('#mbiZone').textContent = mbi.currentScore == null ? 'Fill all inputs' : 'Need Adv3 + NewHigh3';
-    $('#mbiZone').style.color = 'var(--amber)';
-    $('#mbiScore').style.color = mbi.currentScore == null ? 'var(--text)' : 'var(--amber)';
-    $('#mbiActionText').textContent = mbi.currentScore == null
-      ? 'Your next-day participation rule will appear here.'
-      : 'CurrentScore is ready. Add Adv3 and NewHigh3 to finish SuperMBI.';
-    $('#mbiStatsText').textContent = mbi.currentScore == null
-      ? 'CurrentScore, Adv3, and NewHigh3 will appear here.'
-      : `CurrentScore ${round(mbi.currentScore, 0)} • enter Adv3 and NewHigh3 to complete SuperMBI.`;
-    $('#mbiSignals').innerHTML = renderSignalCards([], 'Import Dashboard history or type the converted fields manually.', 'neutral');
-    $('#mbiSellSignals').innerHTML = renderSignalCards([], 'Open-position overlay will appear once SuperMBI is ready.', 'neutral');
-    $('#mbiSizing').innerHTML = mbi.currentScore == null
-      ? '<div class="panel-note">Need the latest row values plus 3-day burst filters.</div>'
-      : makeMetricPreviewCard('CurrentScore', String(round(mbi.currentScore, 0)), mbi.currentScore >= 0 ? 'positive' : 'negative');
-    $('#mbiBreakdown').innerHTML = mbi.breakdown.length
-      ? mbi.breakdown.map((item) => `
-          <div class="breakdown-item">
-            <div class="top">
-              <div class="name">${escapeHtml(item.name)}</div>
-              <div class="value ${item.score >= 0 ? 'positive' : 'negative'}">${item.score > 0 ? '+' : ''}${item.score}</div>
-            </div>
-            <div class="raw">${escapeHtml(item.raw)}</div>
-          </div>
-        `).join('')
-      : '<div class="panel-note">The 11-pillar breakdown appears once the latest-row values are filled.</div>';
-    renderMbiHistoryVisuals();
-    return;
-  }
-
-  const colorMap = {
-    green: 'var(--green)',
-    blue: 'var(--blue)',
-    amber: 'var(--amber)',
-    red: 'var(--red)',
-    slate: 'var(--slate)',
-  };
-  const color = colorMap[mbi.color] || 'var(--text)';
-
-  $('#mbiScore').textContent = round(mbi.superMbi, 2).toFixed(2);
-  $('#mbiScore').style.color = color;
-  $('#mbiZone').textContent = mbi.zone;
-  $('#mbiZone').style.color = color;
-  $('#mbiActionText').textContent = mbi.action;
-  $('#mbiStatsText').textContent = mbi.statsText;
-  $('#mbiSignals').innerHTML = renderSignalCards(mbi.signals, 'No regime notes yet.', 'neutral');
-  $('#mbiSellSignals').innerHTML = renderSignalCards(mbi.sellSignals, 'No open-position overlay yet.', 'neutral');
-  $('#mbiSizing').innerHTML = mbi.sizingCards.map((card) => makeMetricPreviewCard(card.label, escapeHtml(card.value), card.tone === 'negative' ? 'negative' : card.tone === 'warning' ? 'warning' : 'positive')).join('');
-  $('#mbiBreakdown').innerHTML = mbi.breakdown
-    .map((item) => `
-      <div class="breakdown-item">
-        <div class="top">
-          <div class="name">${escapeHtml(item.name)}</div>
-          <div class="value ${item.score >= 0 ? 'positive' : 'negative'}">${item.score > 0 ? '+' : ''}${item.score}</div>
-        </div>
-        <div class="raw">${escapeHtml(item.raw)}</div>
-      </div>
-    `)
-    .join('');
-  renderMbiHistoryVisuals();
-}
-
-function renderSellCheck() {
-  const sell = quickSellCalculator({
-    buyPrice: $('#sellBuyPrice').value,
-    currentPrice: $('#sellCurrentPrice').value,
-    qty: $('#sellQty').value,
-    daysHeld: $('#sellDaysHeld').value,
-  });
-
-  $('#sellPnl').textContent = formatCurrency(sell.pnl || 0, getCurrency());
-  $('#sellPnl').className = cn('metric-value', (sell.pnl || 0) >= 0 ? 'positive' : 'negative');
-  $('#sellPnlPercent').textContent = formatPercent(sell.pnlPercent || 0, 2);
-  $('#sellPnlPercent').className = cn('metric-value', (sell.pnlPercent || 0) >= 0 ? 'positive' : 'negative');
-  $('#sellAdvice').textContent = sell.advice;
-
-  const checklist = buildSellChecklist({
-    pnlPercent: sell.pnlPercent || 0,
-    daysHeld: Number($('#sellDaysHeld').value || 0),
-    mbiScore: Number($('#sellMbiScore').value || 0),
-    prevScore: Number($('#sellPrevScore').value || 0),
-    lows52wPercent: Number($('#sell52wLows').value || 0),
-    above20maPercent: Number($('#sellAbove20').value || 0),
-  });
-
-  $('#sellChecklist').innerHTML = checklist
-    .map((item) => `
-      <div class="check-item">
-        <div class="check-badge ${item.level}">${item.order}</div>
-        <div>
-          <div><strong>${escapeHtml(item.question)}</strong></div>
-          <div class="check-copy">${escapeHtml(item.action)}</div>
-        </div>
-      </div>
-    `)
-    .join('');
-}
-
-
-function syncRiskPresetChips() {
-  const risk = Number($('#calcRiskPercent').value || 0);
-  $$('.risk-chip').forEach((chip) => {
-    chip.classList.toggle('active', Number(chip.dataset.risk || 0) === risk);
-  });
-}
-
-function resetCalculatorForm() {
-  $('#calcEntry').value = '';
-  $('#calcSlPrice').value = '';
-  $('#calcSlPercent').value = '';
-  $('#calcPositionSize').value = '';
-  $('#calcRiskAmount').value = '';
-  $('#calcTrailPrice').value = '';
-  $('#targetR').value = '';
-  $('#targetPercent').value = '';
-  $('#targetExitPrice').value = '';
-  $('#calcLastEdited').value = 'entry';
-  renderCalculator();
-}
+function resetCalculatorForm() { for (const ref of [refs.calcEntry, refs.calcSlPrice, refs.calcSlPercent, refs.calcPositionSize, refs.calcRiskAmount, refs.calcTrailPrice, refs.targetR, refs.targetPercent, refs.targetExitPrice]) ref.value = ''; refs.calcLastEdited.value = 'entry'; renderCalculator(); }
 
 function pushCalculatorToTrade() {
-  const solver = solvePositionCalculator({
-    capital: $('#calcCapital').value,
-    riskPercent: $('#calcRiskPercent').value,
-    entry: $('#calcEntry').value,
-    slPrice: $('#calcSlPrice').value,
-    slPercent: $('#calcSlPercent').value,
-    positionSize: $('#calcPositionSize').value,
-    riskAmount: $('#calcRiskAmount').value,
-    lastEdited: $('#calcLastEdited').value,
-  });
-
-  if (!(solver.entry > 0) || !(solver.qty > 0)) {
-    showToast('Enter entry and a valid stop first so the calculator can seed a trade.', 'error');
-    return;
-  }
-
-  openTradeModal();
-  $('#tradeDirection').value = solver.long ? 'LONG' : 'SHORT';
-  $('#tradePlannedRisk').value = solver.actualRisk || $('#calcRiskAmount').value || '';
-  $('#tradePlannedStop').value = solver.slPrice || '';
-  const mbiScoreText = $('#mbiScore').textContent;
-  if (mbiScoreText && mbiScoreText !== '—') $('#tradeMbiScore').value = mbiScoreText;
-  refs.fillsContainer.innerHTML = '';
-  createFillRow({
-    side: solver.long ? 'BUY' : 'SELL',
-    qty: solver.qty,
-    price: solver.entry,
-    note: 'Seeded from calculator',
-  });
-  syncTradePreview();
-  showToast('Calculator values pushed into a new trade.', 'success');
+  const solver = solvePositionCalculator({ capital: refs.calcCapital.value, riskPercent: refs.calcRiskPercent.value, entry: refs.calcEntry.value, slPrice: refs.calcSlPrice.value, slPercent: refs.calcSlPercent.value, positionSize: refs.calcPositionSize.value, riskAmount: refs.calcRiskAmount.value, lastEdited: refs.calcLastEdited.value });
+  if (!(solver.entry > 0) || !(solver.qty > 0)) { showToast('Enter entry and a valid stop-loss first.', 'error'); return; }
+  openTradeModal(); refs.tradeDirection.value = solver.long ? 'LONG' : 'SHORT'; refs.tradePlannedRisk.value = solver.actualRisk || refs.calcRiskAmount.value || ''; refs.tradePlannedStop.value = solver.slPrice || ''; refs.fillsContainer.innerHTML = ''; createFillRow({ side: solver.long ? 'BUY' : 'SELL', qty: solver.qty, price: solver.entry, note: 'Draft seeded from calculator' }); state.ui.tradeDraft.dirty = true; state.ui.tradeDraft.calculatorSeeded = true; state.ui.calculatorDraftActive = true; switchTab('journal'); syncTradePreview(); showToast('Calculator values opened as an unsaved journal draft.', 'success');
 }
 
-async function subscribeToTrades() {
-  if (state.unsubTrades) {
-    state.unsubTrades();
-    state.unsubTrades = null;
-  }
-  state.unsubTrades = state.storage.subscribeTrades(
-    (trades) => {
-      state.trades = (trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) }));
-      renderAll();
-    },
-    (error) => showToast(error.message || 'Could not load trades.', 'error'),
-  );
+async function saveTradeForm(event) {
+  event.preventDefault(); const draft = state.ui.tradeDraft; if (!draft || draft.saving) return; draft.saving = true; refs.saveTradeBtn.disabled = true; setFormStatus(refs.tradeSaveStatus, state.mode === 'cloud' ? 'Saving to Firebase…' : 'Saving locally…', 'busy'); const epoch = state.sessionEpoch;
+  try { const trade = readTradeForm(); if (!trade.symbol) throw new Error('Symbol is required.'); if (!trade.fills.length) throw new Error('Add at least one fill.'); computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE); await state.storage.saveTrade(trade); if (epoch !== state.sessionEpoch) return; closeTradeModal(true); showToast(state.mode === 'demo' ? 'Trade saved locally.' : 'Trade saved to Firebase.', 'success'); }
+  catch (error) { console.error(error); if (epoch === state.sessionEpoch) setFormStatus(refs.tradeSaveStatus, friendlyError(error, 'Could not save trade.'), 'error'); }
+  finally { if (epoch === state.sessionEpoch) { draft.saving = false; refs.saveTradeBtn.disabled = false; } }
 }
 
-async function subscribeToWinners() {
-  if (state.unsubWinners) {
-    state.unsubWinners();
-    state.unsubWinners = null;
-  }
-  state.unsubWinners = state.storage.subscribeWinners(
-    (entries) => {
-      state.winners = (entries || []).map((entry) => normalizeWinnerPayload(entry));
-      renderAll();
-    },
-    (error) => showToast(error.message || 'Could not load winner database entries.', 'error'),
-  );
+function openLinkedWinnerFromTrade(trade) {
+  const metrics = computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  if (metrics.status !== 'CLOSED' || !(metrics.realizedNetPnl > 0)) { showToast('Only profitable closed trades can become winner examples.', 'error'); return; }
+  const existing = state.winners.find((entry) => entry.sourceTradeId === trade.id);
+  if (existing) { openWinnerModal(existing); return; }
+  const entry = createLinkedWinnerDraft(trade, metrics, { pnlMethod: state.settings.pnlMethod, currency: getCurrency() });
+  openWinnerModal(entry); state.ui.winnerDraft.dirty = true; state.ui.winnerDraft.mode = 'linked-new'; refs.winnerSourceTradeSection.innerHTML = sourceTradeSummary(entry); refs.winnerSourceTradeSection.classList.remove('hidden'); showToast('Winner example opened as a draft. Nothing has been saved yet.', 'success');
+}
+
+function setPhoneAuthStep(step) { const code = step === 'code'; refs.phoneNumberStep.classList.toggle('hidden', code); refs.phoneCodeStep.classList.toggle('hidden', !code); refs.phoneNumberInput.required = !code; refs.phoneCodeInput.required = code; if (code) refs.phoneCodeInput.focus(); }
+function openPhoneAuthModal() { refs.phoneAuthModal.classList.remove('hidden'); refs.phoneAuthModal.setAttribute('aria-hidden', 'false'); refs.phoneAuthStatus.textContent = ''; refs.phoneNumberInput.value = ''; refs.phoneCodeInput.value = ''; setPhoneAuthStep('number'); refs.phoneNumberInput.focus(); }
+function closePhoneAuthModal() { state.storage?.cancelPhoneAuth?.(); refs.phoneAuthModal.classList.add('hidden'); refs.phoneAuthModal.setAttribute('aria-hidden', 'true'); setPhoneAuthStep('number'); }
+function openAccountModal() { renderSettingsForm(); refs.accountModal.classList.remove('hidden'); refs.accountModal.setAttribute('aria-hidden', 'false'); refs.closeAccountModalBtn.focus(); }
+function closeAccountModal() { refs.accountModal.classList.add('hidden'); refs.accountModal.setAttribute('aria-hidden', 'true'); }
+
+async function subscribeToTrades(epoch = state.sessionEpoch, userId = state.user?.uid) {
+  state.unsubTrades?.(); state.unsubTrades = null;
+  state.unsubTrades = state.storage.subscribeTrades((trades) => { if (epoch !== state.sessionEpoch || (state.mode === 'cloud' && state.user?.uid !== userId)) return; state.trades = (trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load trades.'), 'error'); });
+}
+async function subscribeToWinners(epoch = state.sessionEpoch, userId = state.user?.uid) {
+  state.unsubWinners?.(); state.unsubWinners = null;
+  state.unsubWinners = state.storage.subscribeWinners((entries) => { if (epoch !== state.sessionEpoch || (state.mode === 'cloud' && state.user?.uid !== userId)) return; state.winners = (entries || []).map((entry) => normalizeWinnerPayload(entry)); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load winner examples.'), 'error'); });
+}
+
+function clearPrivateUi() {
+  state.unsubTrades?.(); state.unsubWinners?.(); state.unsubTrades = null; state.unsubWinners = null; state.trades = []; state.winners = []; state.settings = { ...defaultSettings }; closeTradeModal(true); closeWinnerModal(true); clearWinnerImageDraft(); state.ui.tradeDraft = null; state.ui.winnerDraft = null; state.ui.calculatorDraftActive = false;
 }
 
 async function handleAuthChanged(user) {
-  state.user = user;
+  const previousUid = state.user?.uid || null; const nextUid = user?.uid || null; const keepCalculatorDraft = !previousUid && Boolean(nextUid) && Boolean(state.ui.calculatorDraftActive);
+  state.sessionEpoch += 1; const epoch = state.sessionEpoch; state.user = user;
+  if (state.mode === 'cloud' && previousUid && previousUid !== nextUid) clearPrivateUi();
+  if (state.mode === 'cloud' && !user) { clearPrivateUi(); renderAll(); return; }
   if (state.mode === 'cloud' && user) {
-    state.settings = (await state.storage.loadSettings()) || { ...defaultSettings };
-    await subscribeToTrades();
-    await subscribeToWinners();
-  } else if (state.mode === 'cloud' && !user) {
-    if (state.unsubTrades) state.unsubTrades();
-    if (state.unsubWinners) state.unsubWinners();
-    state.unsubTrades = null;
-    state.unsubWinners = null;
-    state.trades = [];
-    state.winners = [];
-    state.settings = { ...defaultSettings };
-  } else {
-    state.settings = (await state.storage.loadSettings()) || { ...defaultSettings };
-    await subscribeToTrades();
-    await subscribeToWinners();
-  }
-  renderAll();
+    try { state.settings = (await state.storage.loadSettings()) || { ...defaultSettings }; if (epoch !== state.sessionEpoch) return; await subscribeToTrades(epoch, user.uid); await subscribeToWinners(epoch, user.uid); if (!keepCalculatorDraft && !state.ui.tradeDraft) switchTab('journal'); }
+    catch (error) { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load this account.'), 'error'); }
+  } else if (state.mode === 'demo') { await subscribeToTrades(epoch); await subscribeToWinners(epoch); }
+  if (epoch === state.sessionEpoch) renderAll();
 }
 
-function bindTabEvents() {
-  $('#mainTabs').addEventListener('click', (event) => {
-    const button = event.target.closest('.tab');
-    if (!button) return;
-    switchTab(button.dataset.tab);
-  });
-}
+function bindTabEvents() { refs.mainTabs = $('#mainTabs'); refs.mainTabs.addEventListener('click', (event) => { const button = event.target.closest('.tab'); if (button) switchTab(button.dataset.tab); }); }
 
 function bindToolbarEvents() {
-  refs.signInBtn.addEventListener('click', async () => {
-    try {
-      await state.storage.signIn();
-      showToast('Signed in successfully.', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Sign-in failed.', 'error');
-    }
-  });
-
-  refs.signOutBtn.addEventListener('click', async () => {
-    try {
-      await state.storage.signOut();
-      showToast('Signed out.', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Could not sign out.', 'error');
-    }
-  });
-
-  refs.resetCalcBtn?.addEventListener('click', resetCalculatorForm);
-  refs.pushCalcToTradeBtn?.addEventListener('click', pushCalculatorToTrade);
-  $$('.risk-chip').forEach((chip) => chip.addEventListener('click', () => {
-    $('#calcRiskPercent').value = chip.dataset.risk || '';
-    syncRiskPresetChips();
-    renderCalculator();
-  }));
-
-  $('#openTradeModalBtn').addEventListener('click', () => openTradeModal());
-  $('#addTradeFromDashboard').addEventListener('click', () => openTradeModal());
-  $('#closeTradeModalBtn').addEventListener('click', closeTradeModal);
-  refs.tradeModal.addEventListener('click', (event) => {
-    if (event.target.hasAttribute('data-close-modal')) closeTradeModal();
-  });
-
-  $('#openWinnerModalBtn')?.addEventListener('click', () => openWinnerModal());
-  $('#closeWinnerModalBtn')?.addEventListener('click', closeWinnerModal);
-  refs.winnerModal?.addEventListener('click', (event) => {
-    if (event.target.hasAttribute('data-close-winner-modal')) closeWinnerModal();
-  });
-  refs.winnerTable?.addEventListener('click', handleWinnerTableClick);
-  $('#winnerImageUrl')?.addEventListener('input', syncWinnerImagePreview);
-  refs.pickWinnerImageBtn?.addEventListener('click', () => refs.winnerImageFile?.click());
-  refs.clearWinnerImageBtn?.addEventListener('click', clearWinnerImageSelection);
-  refs.winnerImageFile?.addEventListener('change', handleWinnerImageFileChange);
-  refs.addWinnerMoveBtn?.addEventListener('click', () => {
-    const moves = readWinnerMovesBuilderRaw();
-    moves.push(emptyWinnerMoveForm());
-    renderWinnerMovesBuilder(moves);
-  });
-  refs.winnerMovesBuilder?.addEventListener('click', handleWinnerMovesBuilderClick);
-  refs.winnerMovesBuilder?.addEventListener('input', renderWinnerMovesSummary);
-
-  $('#addBuyFillBtn').addEventListener('click', () => createFillRow({ side: 'BUY' }));
-  $('#addSellFillBtn').addEventListener('click', () => createFillRow({ side: 'SELL' }));
-
-  refs.fillsContainer.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-action="remove-fill"]');
-    if (!button) return;
-    const card = button.closest('.fill-card');
-    if (card) card.remove();
-    if (!refs.fillsContainer.children.length) createFillRow({ side: 'BUY' });
-    syncTradePreview();
-  });
-  refs.tradeForm.addEventListener('input', syncTradePreview);
-  refs.tradeForm.addEventListener('change', syncTradePreview);
-
-  refs.tradeForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try {
-      const trade = readTradeForm();
-      if (!trade.symbol) throw new Error('Symbol is required.');
-      if (!(trade.fills || []).length) throw new Error('Add at least one fill.');
-      computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
-      await state.storage.saveTrade(trade);
-      closeTradeModal();
-      showToast('Trade saved.', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Could not save trade.', 'error');
-    }
-  });
-
-  refs.winnerForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    let uploadedPath = '';
-    let pathToDelete = '';
-    try {
-      const entry = readWinnerForm();
-      const existing = state.winners.find((item) => item.id === entry.id);
-      const existingPath = existing?.imageStoragePath || '';
-      const existingUrl = existing?.imageUrl || '';
-      const pendingImage = state.ui.winnerImageDraft?.prepared;
-      if (!hasWinnerContent(entry, pendingImage)) throw new Error('Add at least one winner detail before saving.');
-
-      if (pendingImage) {
-        if (!canUploadWinnerImages()) {
-          throw new Error('Screenshot uploads need cloud mode, Google sign-in, and Firebase Storage configured.');
-        }
-        showToast('Uploading screenshot…');
-        const upload = await state.storage.uploadWinnerImage({
-          winnerId: entry.id,
-          blob: pendingImage.blob,
-          fileName: pendingImage.fileName,
-          contentType: pendingImage.contentType,
-        });
-        uploadedPath = upload.storagePath;
-        entry.imageUrl = upload.downloadUrl;
-        entry.imageStoragePath = upload.storagePath;
-        entry.imageBytes = upload.sizeBytes;
-        entry.imageContentType = upload.contentType;
-        entry.imageWidth = pendingImage.width;
-        entry.imageHeight = pendingImage.height;
-        if (existingPath && existingPath !== upload.storagePath) pathToDelete = existingPath;
-      } else if (!entry.imageUrl) {
-        if (existingPath) pathToDelete = existingPath;
-        entry.imageStoragePath = '';
-        entry.imageBytes = null;
-        entry.imageContentType = '';
-        entry.imageWidth = null;
-        entry.imageHeight = null;
-      } else if (entry.imageUrl !== existingUrl && existingPath) {
-        pathToDelete = existingPath;
-        entry.imageStoragePath = '';
-        entry.imageBytes = null;
-        entry.imageContentType = '';
-        entry.imageWidth = null;
-        entry.imageHeight = null;
-      }
-
-      await state.storage.saveWinner(entry);
-      if (pathToDelete && pathToDelete !== uploadedPath) {
-        try {
-          await state.storage.deleteWinnerImage(pathToDelete);
-        } catch (cleanupError) {
-          console.warn('Old screenshot cleanup failed', cleanupError);
-        }
-      }
-      closeWinnerModal();
-      showToast('Winner database entry saved.', 'success');
-    } catch (error) {
-      console.error(error);
-      if (uploadedPath) {
-        try {
-          await state.storage.deleteWinnerImage(uploadedPath);
-        } catch (cleanupError) {
-          console.warn('Uploaded screenshot rollback failed', cleanupError);
-        }
-      }
-      showToast(error.message || 'Could not save winner entry.', 'error');
-    }
-  });
-
-  refs.deleteWinnerBtn?.addEventListener('click', async () => {
-    const entryId = $('#winnerId').value;
-    if (!entryId) return;
-    await handleDeleteWinner(entryId);
-    closeWinnerModal();
-  });
-
-  refs.duplicateTradeBtn.addEventListener('click', () => {
-    try {
-      const trade = readTradeForm();
-      trade.id = uid('trade');
-      trade.fills = trade.fills.map((fill) => ({ ...fill, id: uid('fill') }));
-      openTradeModal(trade, 'duplicate');
-    } catch (error) {
-      showToast(error.message || 'Could not duplicate trade.', 'error');
-    }
-  });
-
-  refs.deleteTradeBtn.addEventListener('click', async () => {
-    const tradeId = $('#tradeId').value;
-    if (!tradeId) return;
-    await handleDeleteTrade(tradeId);
-    closeTradeModal();
-  });
-
-  refs.journalTable.addEventListener('click', handleJournalClick);
-  refs.recentTrades.addEventListener('click', handleJournalClick);
-
-  refs.importTradebookBtn.addEventListener('click', () => refs.importTradebookInput.click());
-  refs.importTradebookInput.addEventListener('change', handleTradebookImport);
-  refs.mbiImportBtn?.addEventListener('click', () => refs.mbiHistoryInput?.click());
-  refs.mbiHistoryInput?.addEventListener('change', handleMbiHistoryFile);
-  refs.mbiApplyTextareaBtn?.addEventListener('click', () => {
-    try {
-      applyMbiHistoryText(refs.mbiHistoryText?.value || '', 'Pasted Dashboard history');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Could not parse pasted Dashboard rows.', 'error');
-    }
-  });
-  refs.mbiClearHistoryBtn?.addEventListener('click', clearMbiHistory);
-  $('#exportCsvBtn').addEventListener('click', exportCsv);
-  $('#exportJsonBtn').addEventListener('click', exportJson);
-  refs.copyCoachPromptBtn?.addEventListener('click', async () => {
-    const prompt = state.ui.lastCoachPrompt || buildAiCoachReport(getFilteredTradesRaw(), state.settings.pnlMethod || PNL_METHODS.AVERAGE).promptText;
-    if (!prompt) {
-      showToast('Add some closed trades in the active filter scope first to generate a review prompt.', 'error');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(prompt);
-      showToast('Coach review prompt copied.', 'success');
-    } catch (error) {
-      downloadTextFile('trademaster-coach-prompt.txt', prompt);
-      showToast('Clipboard blocked. Prompt downloaded as a text file.', 'success');
-    }
-  });
-
-  const rerenderTradeAnalytics = () => renderAll();
-  const bindFilter = (selector, key) => {
-    $(selector).addEventListener('input', (event) => {
-      state.filters[key] = event.target.value;
-      rerenderTradeAnalytics();
-    });
-    $(selector).addEventListener('change', (event) => {
-      state.filters[key] = event.target.value;
-      rerenderTradeAnalytics();
-    });
-  };
-
-  bindFilter('#searchInput', 'search');
-  bindFilter('#statusFilter', 'status');
-  bindFilter('#directionFilter', 'direction');
-  bindFilter('#resultFilter', 'result');
-  bindFilter('#timeframeFilter', 'timeframe');
-  bindFilter('#strategyFilter', 'strategy');
-  bindFilter('#sortSelect', 'sort');
-  bindFilter('#minMbiFilter', 'minMbi');
-  bindFilter('#lossThresholdFilter', 'lossWorseThan');
-  bindFilter('#moveThresholdFilter', 'minAbsMove');
-  bindFilter('#dipBeforeMoveFilter', 'maxDipBeforeMove');
-
-  $('#periodPresetFilter').addEventListener('change', (event) => {
-    state.filters.periodPreset = event.target.value;
-    if (event.target.value === 'CUSTOM') {
-      rerenderTradeAnalytics();
-      return;
-    }
-    const range = periodPresetRange(event.target.value);
-    state.filters.fromDate = range.fromDate;
-    state.filters.toDate = range.toDate;
-    $('#fromDateFilter').value = range.fromDate;
-    $('#toDateFilter').value = range.toDate;
-    rerenderTradeAnalytics();
-  });
-
-  ['#fromDateFilter', '#toDateFilter'].forEach((selector, index) => {
-    $(selector).addEventListener('input', (event) => {
-      state.filters[index === 0 ? 'fromDate' : 'toDate'] = event.target.value;
-      state.filters.periodPreset = 'CUSTOM';
-      $('#periodPresetFilter').value = 'CUSTOM';
-      rerenderTradeAnalytics();
-    });
-    $(selector).addEventListener('change', (event) => {
-      state.filters[index === 0 ? 'fromDate' : 'toDate'] = event.target.value;
-      state.filters.periodPreset = 'CUSTOM';
-      $('#periodPresetFilter').value = 'CUSTOM';
-      rerenderTradeAnalytics();
-    });
-  });
-
-  const bindWinnerFilter = (selector, key) => {
-    $(selector).addEventListener('input', (event) => {
-      state.winnerFilters[key] = event.target.value;
-      renderWinnerSummary();
-    });
-    $(selector).addEventListener('change', (event) => {
-      state.winnerFilters[key] = event.target.value;
-      renderWinnerSummary();
-    });
-  };
-
-  bindWinnerFilter('#winnerSearchInput', 'search');
-  bindWinnerFilter('#winnerSectorFilter', 'sector');
-  bindWinnerFilter('#winnerTypeFilter', 'type');
-  bindWinnerFilter('#winnerSetupFilter', 'setup');
-  bindWinnerFilter('#winnerTimeframeFilter', 'timeframe');
-  bindWinnerFilter('#winnerPeriodFilter', 'period');
-  bindWinnerFilter('#winnerMinMoveFilter', 'minMove');
-  bindWinnerFilter('#winnerMinInitialMoveFilter', 'minInitialMove');
-  bindWinnerFilter('#winnerMaxDipFilter', 'maxDipBeforeMove');
-  bindWinnerFilter('#winnerMaxStage4Filter', 'maxStage4Decline');
-  bindWinnerFilter('#winnerMinMbiFilter', 'minMbi');
-  bindWinnerFilter('#winnerMinMoveCountFilter', 'minMoveCount');
-  bindWinnerFilter('#winnerMinBaseCountFilter', 'minBaseCount');
-  bindWinnerFilter('#winnerMinAvgExpansionFilter', 'minAvgExpansion');
-  bindWinnerFilter('#winnerMinMaxExpansionFilter', 'minMaxExpansion');
-  bindWinnerFilter('#winnerMinBiggestBaseFilter', 'minBiggestBaseLength');
-  bindWinnerFilter('#winnerMaxDeepestBaseFilter', 'maxDeepestBase');
-  bindWinnerFilter('#winnerHasImageFilter', 'hasImage');
-  bindWinnerFilter('#winnerSortSelect', 'sort');
-
-  [
-    '#calcCapital', '#calcRiskPercent', '#calcLastEdited', '#calcEntry', '#calcSlPrice', '#calcSlPercent', '#calcPositionSize', '#calcRiskAmount', '#calcTrailPrice', '#targetR', '#targetPercent', '#targetExitPrice',
-  ].forEach((selector) => $(selector).addEventListener('input', renderCalculator));
-  [['#calcPositionSize', 'positionSize'], ['#calcRiskAmount', 'riskAmount'], ['#calcEntry', 'entry'], ['#calcSlPrice', 'entry'], ['#calcSlPercent', 'entry']].forEach(([selector, mode]) => {
-    $(selector).addEventListener('input', () => {
-      $('#calcLastEdited').value = mode;
-      renderCalculator();
-    });
-  });
-  [
-    '#mbiA20', '#mbiA50', '#mbiA200', '#mbiNb', '#mbiWh', '#mbiWl', '#mbiBosf', '#mbiUhlh', '#mbiVol', '#mbiAdv', '#mbiNhl', '#mbiBd', '#mbiAdv3Pts', '#mbiNewHigh3Pts',
-  ].forEach((selector) => $(selector).addEventListener('input', renderMbi));
-  [
-    '#sellBuyPrice', '#sellCurrentPrice', '#sellQty', '#sellDaysHeld', '#sellMbiScore', '#sellPrevScore', '#sell52wLows', '#sellAbove20',
-  ].forEach((selector) => $(selector).addEventListener('input', renderSellCheck));
-
-  $('#saveSettingsBtn').addEventListener('click', async () => {
-    try {
-      state.settings = await state.storage.saveSettings({
-        pnlMethod: $('#settingsPnlMethod').value,
-        baseCurrency: $('#settingsCurrency').value,
-      });
-      renderAll();
-      syncTradePreview();
-      renderCalculator();
-      showToast('Settings saved.', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Could not save settings.', 'error');
-    }
-  });
-
-  $('#backupDriveBtn').addEventListener('click', async () => {
-    try {
-      const payload = { version: 2, exportedAt: new Date().toISOString(), settings: state.settings, trades: state.trades, winners: state.winners };
-      await state.storage.backupToDrive(payload);
-      showToast('Backup saved to Google Drive.', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Backup failed.', 'error');
-    }
-  });
-
-  $('#restoreDriveBtn').addEventListener('click', async () => {
-    try {
-      const payload = await state.storage.restoreFromDrive();
-      if (!payload?.trades) throw new Error('Backup file is invalid.');
-      await state.storage.replaceAllData({ ...payload, winners: payload.winners || [] });
-      showToast('Backup restored. Refreshing data…', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Restore failed.', 'error');
-    }
-  });
-
-  $('#importJsonBtn').addEventListener('click', () => $('#importJsonInput').click());
-  $('#importJsonInput').addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const payload = JSON.parse(text);
-      const data = Array.isArray(payload) ? { trades: payload, winners: [], settings: state.settings } : payload;
-      if (!Array.isArray(data.trades)) throw new Error('JSON must contain a trades array.');
-      await state.storage.replaceAllData({ ...data, winners: data.winners || [] });
-      showToast('JSON imported successfully.', 'success');
-      event.target.value = '';
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || 'Import failed.', 'error');
-    }
-  });
+  refs.signInBtn.addEventListener('click', async () => { try { await state.storage.signIn(); } catch (error) { console.error(error); showToast(friendlyError(error, 'Sign-in failed.'), 'error'); } });
+  refs.twitterSignInBtn.addEventListener('click', async () => { try { await state.storage.signInWithTwitter(); } catch (error) { console.error(error); showToast(friendlyError(error, 'X sign-in failed.'), 'error'); } });
+  refs.phoneSignInBtn.addEventListener('click', openPhoneAuthModal); refs.closePhoneAuthBtn.addEventListener('click', closePhoneAuthModal); refs.phoneAuthModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-phone-modal')) closePhoneAuthModal(); });
+  refs.restartPhoneAuthBtn.addEventListener('click', () => { state.storage?.cancelPhoneAuth?.(); refs.phoneCodeInput.value = ''; setPhoneAuthStep('number'); refs.phoneNumberInput.focus(); });
+  refs.phoneAuthForm.addEventListener('submit', async (event) => { event.preventDefault(); refs.requestPhoneCodeBtn.disabled = true; setFormStatus(refs.phoneAuthStatus, 'Requesting verification code…', 'busy'); try { await state.storage.requestPhoneCode(refs.phoneNumberInput.value, 'phoneRecaptcha'); setPhoneAuthStep('code'); setFormStatus(refs.phoneAuthStatus, 'Verification code sent.'); } catch (error) { console.error(error); setFormStatus(refs.phoneAuthStatus, friendlyError(error, 'Could not send verification code.'), 'error'); } finally { refs.requestPhoneCodeBtn.disabled = false; } });
+  refs.confirmPhoneCodeBtn.addEventListener('click', async () => { refs.confirmPhoneCodeBtn.disabled = true; setFormStatus(refs.phoneAuthStatus, 'Confirming code…', 'busy'); try { await state.storage.confirmPhoneCode(refs.phoneCodeInput.value); closePhoneAuthModal(); } catch (error) { console.error(error); setFormStatus(refs.phoneAuthStatus, friendlyError(error, 'Could not verify the code.'), 'error'); } finally { refs.confirmPhoneCodeBtn.disabled = false; } });
+  const signOut = async () => { try { await state.storage.signOut(); closeAccountModal(); } catch (error) { console.error(error); showToast(friendlyError(error, 'Could not sign out.'), 'error'); } };
+  refs.signOutBtn.addEventListener('click', signOut); refs.accountSignOutBtn.addEventListener('click', signOut);
+  refs.accountMenuBtn.addEventListener('click', openAccountModal); refs.closeAccountModalBtn.addEventListener('click', closeAccountModal); refs.accountModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-account-modal')) closeAccountModal(); }); refs.openAccountFromJournalBtn.addEventListener('click', openAccountModal);
+  refs.resetCalcBtn.addEventListener('click', resetCalculatorForm); refs.pushCalcToTradeBtn.addEventListener('click', pushCalculatorToTrade); $$('.risk-chip').forEach((chip) => chip.addEventListener('click', () => { refs.calcRiskPercent.value = chip.dataset.risk; refs.calcLastEdited.value = 'entry'; renderCalculator(); }));
+  refs.openTradeModalBtn.addEventListener('click', () => { switchTab('journal'); openTradeModal(); }); refs.closeTradeModalBtn.addEventListener('click', () => closeTradeModal()); refs.tradeModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-modal')) closeTradeModal(); });
+  refs.addBuyFillBtn.addEventListener('click', () => { createFillRow({ side: 'BUY' }); state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.addSellFillBtn.addEventListener('click', () => { createFillRow({ side: 'SELL' }); state.ui.tradeDraft.dirty = true; syncTradePreview(); });
+  refs.fillsContainer.addEventListener('click', (event) => { const button = event.target.closest('[data-action="remove-fill"]'); if (!button) return; button.closest('.fill-card')?.remove(); if (!refs.fillsContainer.children.length) createFillRow({ side: 'BUY' }); state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.tradeForm.addEventListener('input', () => { if (state.ui.tradeDraft) state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.tradeForm.addEventListener('change', () => { if (state.ui.tradeDraft) state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.tradeForm.addEventListener('submit', saveTradeForm);
+  refs.duplicateTradeBtn.addEventListener('click', () => { const trade = readTradeForm(); trade.id = uid('trade'); trade.fills = trade.fills.map((fill) => ({ ...fill, id: uid('fill') })); openTradeModal(trade, 'duplicate'); }); refs.deleteTradeBtn.addEventListener('click', async () => { if (await handleDeleteTrade(refs.tradeId.value)) closeTradeModal(true); }); refs.journalTable.addEventListener('click', handleJournalClick);
+  refs.importTradebookBtn.addEventListener('click', () => refs.importTradebookInput.click()); refs.importTradebookInput.addEventListener('change', handleTradebookImport); refs.exportCsvBtn.addEventListener('click', exportCsv); refs.exportJsonBtn.addEventListener('click', exportJson); refs.journalPerformanceDetails.addEventListener('toggle', renderCharts);
+  const bindFilter = (selector, key, render = renderAll) => { const element = $(selector); element.addEventListener('input', (event) => { state.filters[key] = event.target.value; render(); }); element.addEventListener('change', (event) => { state.filters[key] = event.target.value; render(); }); };
+  for (const [selector, key] of [['#searchInput', 'search'], ['#statusFilter', 'status'], ['#directionFilter', 'direction'], ['#resultFilter', 'result'], ['#timeframeFilter', 'timeframe'], ['#strategyFilter', 'strategy'], ['#sortSelect', 'sort'], ['#lossThresholdFilter', 'lossWorseThan'], ['#moveThresholdFilter', 'minAbsMove'], ['#dipBeforeMoveFilter', 'maxDipBeforeMove']]) bindFilter(selector, key);
+  $('#periodPresetFilter').addEventListener('change', (event) => { state.filters.periodPreset = event.target.value; const range = periodPresetRange(event.target.value); state.filters.fromDate = range.fromDate; state.filters.toDate = range.toDate; $('#fromDateFilter').value = range.fromDate; $('#toDateFilter').value = range.toDate; renderAll(); });
+  for (const [selector, key] of [['#fromDateFilter', 'fromDate'], ['#toDateFilter', 'toDate']]) $(selector).addEventListener('change', (event) => { state.filters[key] = event.target.value; state.filters.periodPreset = 'CUSTOM'; $('#periodPresetFilter').value = 'CUSTOM'; renderAll(); });
+  const bindWinnerFilter = (selector, key) => { const element = $(selector); element.addEventListener('input', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); element.addEventListener('change', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); };
+  for (const [selector, key] of [['#winnerSearchInput', 'search'], ['#winnerSetupFilter', 'setup'], ['#winnerHasImageFilter', 'hasImage'], ['#winnerSortSelect', 'sort'], ['#winnerSectorFilter', 'sector'], ['#winnerTypeFilter', 'type'], ['#winnerTimeframeFilter', 'timeframe'], ['#winnerPeriodFilter', 'period'], ['#winnerMinMoveFilter', 'minMove'], ['#winnerMinInitialMoveFilter', 'minInitialMove'], ['#winnerMaxDipFilter', 'maxDipBeforeMove'], ['#winnerMaxStage4Filter', 'maxStage4Decline'], ['#winnerMinMoveCountFilter', 'minMoveCount'], ['#winnerMinBaseCountFilter', 'minBaseCount'], ['#winnerMinAvgExpansionFilter', 'minAvgExpansion'], ['#winnerMinMaxExpansionFilter', 'minMaxExpansion'], ['#winnerMinBiggestBaseFilter', 'minBiggestBaseLength'], ['#winnerMaxDeepestBaseFilter', 'maxDeepestBase']]) bindWinnerFilter(selector, key);
+  for (const selector of ['#calcCapital', '#calcRiskPercent', '#calcLastEdited', '#calcEntry', '#calcSlPrice', '#calcSlPercent', '#calcPositionSize', '#calcRiskAmount', '#calcTrailPrice', '#targetR', '#targetPercent', '#targetExitPrice']) $(selector).addEventListener('input', renderCalculator); for (const [selector, mode] of [['#calcPositionSize', 'positionSize'], ['#calcRiskAmount', 'riskAmount'], ['#calcEntry', 'entry'], ['#calcSlPrice', 'entry'], ['#calcSlPercent', 'entry']]) $(selector).addEventListener('input', () => { refs.calcLastEdited.value = mode; renderCalculator(); });
+  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, state.mode === 'cloud' ? 'Saving settings to Firebase…' : 'Saving settings locally…', 'busy'); try { state.settings = await state.storage.saveSettings({ pnlMethod: refs.settingsPnlMethod.value, baseCurrency: refs.settingsCurrency.value }); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
+  refs.backupDriveBtn.addEventListener('click', async () => { try { await state.storage.backupToDrive({ version: 3, exportedAt: new Date().toISOString(), settings: state.settings, trades: state.trades, winners: state.winners }); showToast('Backup saved to Google Drive.', 'success'); } catch (error) { console.error(error); showToast(friendlyError(error, 'Backup failed.'), 'error'); } });
+  refs.restoreDriveBtn.addEventListener('click', async () => { if (!window.confirm('Restore from Drive and replace this account’s current trades and examples?')) return; try { const payload = await state.storage.restoreFromDrive(); if (!payload?.trades) throw new Error('Backup file is invalid.'); await state.storage.replaceAllData({ ...payload, winners: payload.winners || [] }); showToast('Backup restored.', 'success'); } catch (error) { console.error(error); showToast(friendlyError(error, 'Restore failed.'), 'error'); } });
+  refs.importJsonBtn.addEventListener('click', () => refs.importJsonInput.click()); refs.importJsonInput.addEventListener('change', async (event) => { const file = event.target.files?.[0]; if (!file) return; if (!window.confirm('Import this JSON and replace the current dataset?')) { event.target.value = ''; return; } try { const payload = JSON.parse(await file.text()); const data = Array.isArray(payload) ? { trades: payload, winners: [], settings: state.settings } : payload; if (!Array.isArray(data.trades)) throw new Error('JSON must contain a trades array.'); await state.storage.replaceAllData({ ...data, winners: data.winners || [] }); showToast('JSON imported.', 'success'); } catch (error) { console.error(error); showToast(friendlyError(error, 'JSON import failed.'), 'error'); } finally { event.target.value = ''; } });
+  refs.openWinnerModalBtn.addEventListener('click', () => openWinnerModal()); refs.closeWinnerModalBtn.addEventListener('click', () => closeWinnerModal()); refs.winnerModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-winner-modal')) closeWinnerModal(); }); refs.winnerTable.addEventListener('click', handleWinnerTableClick); refs.winnerTable.addEventListener('error', (event) => { const image = event.target.closest('[data-winner-image]'); if (image) { image.classList.add('hidden'); image.nextElementSibling?.classList.remove('hidden'); } }, true);
+  refs.winnerForm.addEventListener('input', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('change', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('submit', saveWinnerForm); refs.winnerImageUrl.addEventListener('input', syncWinnerImagePreview); refs.pickWinnerImageBtn.addEventListener('click', () => refs.winnerImageFile.click()); refs.clearWinnerImageBtn.addEventListener('click', clearWinnerImageSelection); refs.winnerImageFile.addEventListener('change', handleWinnerImageFileChange); refs.addWinnerMoveBtn.addEventListener('click', () => { const moves = readWinnerMovesBuilderRaw(); moves.push(emptyWinnerMoveForm()); renderWinnerMovesBuilder(moves); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('click', (event) => { const button = event.target.closest('[data-move-builder-action="remove"]'); if (!button) return; renderWinnerMovesBuilder(readWinnerMovesBuilderRaw().filter((move) => move.id !== button.dataset.moveId)); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('input', renderWinnerMovesSummary); refs.deleteWinnerBtn.addEventListener('click', async () => { if (await handleDeleteWinner(refs.winnerId.value)) closeWinnerModal(true); });
+  refs.closeImagePreviewBtn.addEventListener('click', closeImagePreview); refs.imagePreviewModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-image-preview')) closeImagePreview(); });
 }
+
+function bindKeyboardEvents() { document.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; if (!refs.imagePreviewModal.classList.contains('hidden')) closeImagePreview(); else if (!refs.phoneAuthModal.classList.contains('hidden')) closePhoneAuthModal(); else if (!refs.accountModal.classList.contains('hidden')) closeAccountModal(); else if (!refs.winnerModal.classList.contains('hidden')) closeWinnerModal(); else if (!refs.tradeModal.classList.contains('hidden')) closeTradeModal(); }); }
 
 async function bootstrap() {
-  initRefs();
-  bindTabEvents();
-  bindToolbarEvents();
-  clearTradeForm();
-  clearWinnerForm();
-
-  const config = window.TRADEMASTER_CONFIG?.firebase || {};
-  state.storage = await createStorageLayer(config);
-  state.mode = state.storage.mode;
-  const initial = await state.storage.init();
-  state.user = initial.user;
-  state.settings = initial.settings || { ...defaultSettings };
-  state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) }));
-  state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
-
-  state.storage.onAuthChanged(handleAuthChanged);
-  renderAll();
-  renderCalculator();
-  renderMbi();
-  renderSellCheck();
+  initRefs(); bindTabEvents(); bindToolbarEvents(); bindKeyboardEvents(); clearTradeForm(); clearWinnerForm();
+  const demoOverride = new URLSearchParams(window.location.search).get('mode') === 'demo';
+  const config = demoOverride ? {} : window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); state.mode = state.storage.mode; const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
+  state.storage.onAuthChanged(handleAuthChanged); if (state.mode === 'demo') { await subscribeToTrades(); await subscribeToWinners(); } renderAll(); renderCalculator();
 }
 
-bootstrap().catch((error) => {
-  console.error(error);
-  document.body.innerHTML = `<div class="shell"><div class="panel"><div class="section-title">App failed to load</div><p class="section-copy">${escapeHtml(error.message || 'Unknown error')}</p></div></div>`;
-});
+bootstrap().catch((error) => { console.error(error); document.body.innerHTML = `<div class="shell"><div class="panel"><div class="section-title">App failed to load</div><p class="section-copy">${escapeHtml(friendlyError(error, 'Unknown error'))}</p></div></div>`; });

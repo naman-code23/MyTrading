@@ -556,8 +556,11 @@ export function weekdayBreakdown(trades, method = PNL_METHODS.AVERAGE) {
 }
 
 export function normalizeTradePayload(payload) {
+  // Metrics are derived at render time. Preserve every other historical field so
+  // editing a legacy record does not erase metadata that this UI does not expose.
+  const { metrics: _metrics, ...preserved } = payload || {};
   return {
-    ...payload,
+    ...preserved,
     symbol: String(payload.symbol || '').trim().toUpperCase(),
     direction: payload.direction === 'SHORT' ? 'SHORT' : 'LONG',
     strategy: String(payload.strategy || '').trim(),
@@ -567,7 +570,9 @@ export function normalizeTradePayload(payload) {
     plannedRisk: Number(payload.plannedRisk || 0),
     plannedStop: Number(payload.plannedStop || 0),
     dipBeforeMove: toNullableNumber(payload.dipBeforeMove),
-    mbiScore: payload.mbiScore === '' || payload.mbiScore == null ? null : Number(payload.mbiScore),
+    // Retained for legacy storage and CSV compatibility. It is intentionally not
+    // part of the current journal UI or filter contract.
+    mbiScore: toNullableNumber(payload.mbiScore),
     fills: sortFills(
       (payload.fills || []).map((fill) => ({
         ...fill,
@@ -582,7 +587,6 @@ export function normalizeTradePayload(payload) {
 
 export function filterTrades(trades, filters, method = PNL_METHODS.AVERAGE) {
   const items = attachMetrics(trades, method);
-  const minMbi = Number(filters.minMbi || 0);
   const lossWorseThan = Number(filters.lossWorseThan || 0);
   const minAbsMove = Number(filters.minAbsMove || 0);
   const maxDipBeforeMove = Number(filters.maxDipBeforeMove || 0);
@@ -619,7 +623,6 @@ export function filterTrades(trades, filters, method = PNL_METHODS.AVERAGE) {
       if (filters.toDate && tradeDate > new Date(`${filters.toDate}T23:59:59`).getTime()) return false;
     }
 
-    if (minMbi > 0 && !((trade.mbiScore ?? -Infinity) >= minMbi)) return false;
     if (lossWorseThan > 0) {
       if (!(trade.metrics.realizedPct != null && trade.metrics.realizedPct <= -Math.abs(lossWorseThan))) return false;
     }
@@ -663,8 +666,6 @@ export function sortTrades(tradesWithMetrics, sortKey) {
         return compareNullableNumbers(a.dipBeforeMove, b.dipBeforeMove, 'ASC');
       case 'DIP_DESC':
         return compareNullableNumbers(a.dipBeforeMove, b.dipBeforeMove, 'DESC');
-      case 'MBI_DESC':
-        return compareNullableNumbers(a.mbiScore, b.mbiScore, 'DESC');
       case 'DATE_DESC':
       default: {
         const diff = compareNullableNumbers(tradeSortStamp(a), tradeSortStamp(b), 'DESC');

@@ -23,7 +23,7 @@ function writeJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function createDemoStorage() {
+export function createDemoStorage() {
   const tradeListeners = new Set();
   const winnerListeners = new Set();
 
@@ -60,6 +60,9 @@ function createDemoStorage() {
     },
     async signIn() {
       throw new Error('Add Firebase config in js/config.js to enable Google sign-in and Firestore sync.');
+    },
+    async signInWithTwitter() {
+      throw new Error('Add Firebase config and enable the X provider to use X sign-in.');
     },
     async signOut() {
       return null;
@@ -129,6 +132,18 @@ function createDemoStorage() {
       writeJson(WINNERS_KEY, winners);
       emitWinners();
       return entry.id;
+    },
+    async createWinnerIfAbsent(entry) {
+      const winners = getWinners();
+      const existing = winners.find((item) => item.id === entry.id);
+      if (existing) return { created: false, entry: existing };
+      winners.unshift(entry);
+      writeJson(WINNERS_KEY, winners);
+      emitWinners();
+      return { created: true, entry };
+    },
+    async getWinner(entryId) {
+      return getWinners().find((item) => item.id === entryId) || null;
     },
     async saveWinners(items) {
       const existing = getWinners();
@@ -220,6 +235,7 @@ export async function createStorageLayer(firebaseConfig = {}) {
   return {
     mode: 'cloud',
     storageAvailable: Boolean(firebase.storageReady),
+    twitterAvailable: Boolean(firebase.twitterAvailable),
     async init() {
       const settings = await ensureSettings();
       return { user: currentUser, settings, trades: [], winners: [] };
@@ -234,6 +250,20 @@ export async function createStorageLayer(firebaseConfig = {}) {
     async signIn() {
       currentUser = await firebase.signIn();
       return currentUser;
+    },
+    async signInWithTwitter() {
+      currentUser = await firebase.signInWithTwitter();
+      return currentUser;
+    },
+    async requestPhoneCode(phoneNumber, recaptchaContainerId) {
+      return firebase.requestPhoneCode(phoneNumber, recaptchaContainerId);
+    },
+    async confirmPhoneCode(code) {
+      currentUser = await firebase.confirmPhoneCode(code);
+      return currentUser;
+    },
+    cancelPhoneAuth() {
+      firebase.cancelPhoneAuth();
     },
     async signOut() {
       await firebase.signOut();
@@ -278,6 +308,14 @@ export async function createStorageLayer(firebaseConfig = {}) {
     async saveWinner(entry) {
       if (!currentUser) throw new Error('Sign in first to save winner database entries.');
       return firebase.saveWinner(currentUser.uid, entry);
+    },
+    async createWinnerIfAbsent(entry) {
+      if (!currentUser) throw new Error('Sign in first to save winner database entries.');
+      return firebase.createWinnerIfAbsent(currentUser.uid, entry);
+    },
+    async getWinner(entryId) {
+      if (!currentUser) return null;
+      return firebase.getWinner(currentUser.uid, entryId);
     },
     async saveWinners(entries) {
       if (!currentUser) throw new Error('Sign in first to import winner database entries.');

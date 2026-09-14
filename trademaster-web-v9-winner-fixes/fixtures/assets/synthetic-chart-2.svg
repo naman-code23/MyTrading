@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic TCS breakdown retest chart</title><desc id="desc">Illustrative chart fixture for the TradeMaster showcase.</desc>
+  <rect width="1200" height="680" fill="#101323"/><g stroke="#2a3450" stroke-width="2"><path d="M80 100H1140M80 220H1140M80 340H1140M80 460H1140M80 580H1140"/><path d="M180 60V610M360 60V610M540 60V610M720 60V610M900 60V610"/></g>
+  <path d="M80 120 L160 155 L235 130 L310 220 L385 200 L460 320 L535 280 L610 390 L685 350 L760 470 L835 430 L910 530 L985 500 L1060 570 L1140 545" fill="none" stroke="#f87171" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="M80 275 L1140 490" stroke="#a78bfa" stroke-width="4" stroke-dasharray="16 14"/><circle cx="610" cy="390" r="12" fill="#fbbf24"/><text x="78" y="48" fill="#f8fafc" font-family="system-ui" font-size="30" font-weight="700">TCS · synthetic breakdown retest</text><text x="80" y="645" fill="#94a3b8" font-family="system-ui" font-size="22">Illustrative fixture · not market data</text>
+</svg>

@@ -2,6 +2,84 @@ import { parseTags, round } from './utils.js';
 
 const EXPANSIONS_PER_SLOT = 3;
 const BASES_PER_MOVE = 4;
+export const LINKED_WINNER_PREFIX = 'linked_trade_';
+
+function normalizeTimestamp(value) {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date
+    ? value
+    : (typeof value?.toDate === 'function' ? value.toDate() : new Date(value));
+  if (!Number.isNaN(date.getTime())) return date.toISOString();
+  return String(value);
+}
+
+function encodeStablePart(value) {
+  const text = String(value);
+  const bytes = typeof TextEncoder === 'function'
+    ? Array.from(new TextEncoder().encode(text))
+    : Array.from(text).flatMap((character) => {
+      const code = character.codePointAt(0);
+      return code <= 0xff ? [code] : [code >> 8, code & 0xff];
+    });
+  return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function linkedWinnerId(sourceTradeId) {
+  const normalized = String(sourceTradeId || '').trim();
+  if (!normalized) throw new Error('A source trade ID is required for a linked winner.');
+  return `${LINKED_WINNER_PREFIX}${encodeStablePart(normalized)}`;
+}
+
+export function normalizeSourceTradeSnapshot(snapshot = {}) {
+  const result = {};
+  const symbol = String(snapshot.symbol || '').trim().toUpperCase();
+  const direction = snapshot.direction === 'SHORT' ? 'SHORT' : snapshot.direction === 'LONG' ? 'LONG' : '';
+  const realizedNetPnl = toNullableNumber(snapshot.realizedNetPnl);
+  const realizedPct = toNullableNumber(snapshot.realizedPct);
+  const pnlMethod = String(snapshot.pnlMethod || '').trim().toUpperCase();
+  const currency = String(snapshot.currency || '').trim().toUpperCase();
+  if (symbol) result.symbol = symbol;
+  if (direction) result.direction = direction;
+  for (const key of ['entryAt', 'exitAt', 'capturedAt']) {
+    const value = normalizeTimestamp(snapshot[key]);
+    if (value) result[key] = value;
+  }
+  if (realizedNetPnl != null) result.realizedNetPnl = realizedNetPnl;
+  if (realizedPct != null) result.realizedPct = realizedPct;
+  if (pnlMethod) result.pnlMethod = pnlMethod;
+  if (currency) result.currency = currency;
+  return result;
+}
+
+export function createLinkedWinnerDraft(trade, metrics, options = {}) {
+  if (!trade?.id || !metrics || metrics.status !== 'CLOSED' || !(metrics.realizedNetPnl > 0)) {
+    throw new Error('Only profitable closed trades can become winner examples.');
+  }
+  const capturedAt = normalizeTimestamp(options.capturedAt || new Date().toISOString());
+  const snapshot = normalizeSourceTradeSnapshot({
+    symbol: trade.symbol,
+    direction: trade.direction,
+    entryAt: metrics.entryAt,
+    exitAt: metrics.exitAt,
+    realizedNetPnl: metrics.realizedNetPnl,
+    realizedPct: metrics.realizedPct,
+    pnlMethod: options.pnlMethod,
+    currency: options.currency,
+    capturedAt,
+  });
+  return {
+    id: linkedWinnerId(trade.id),
+    stockName: trade.symbol || '',
+    setup: trade.strategy || '',
+    timeframe: metrics.timeframe || trade.timeframe || '',
+    notes: trade.notes || '',
+    tags: Array.isArray(trade.tags) ? [...trade.tags] : [],
+    sourceTradeId: String(trade.id),
+    sourceTradeSnapshot: snapshot,
+    createdAt: capturedAt,
+    updatedAt: capturedAt,
+  };
+}
 
 function toNullableNumber(value) {
   if (value === '' || value == null) return null;
@@ -191,9 +269,17 @@ function effectiveMetric(entry, metric) {
 }
 
 export function normalizeWinnerPayload(payload = {}) {
+  const {
+    pattern: _pattern,
+    effectiveInitialMove: _effectiveInitialMove,
+    effectiveBaseLength: _effectiveBaseLength,
+    effectiveMove: _effectiveMove,
+    ...preserved
+  } = payload || {};
   const moves = normalizeWinnerMoves(payload.moves || []);
   const pattern = summarizeWinnerPattern(moves);
-  return {
+  const normalized = {
+    ...preserved,
     id: payload.id || '',
     stockName: String(payload.stockName || '').trim().toUpperCase(),
     sector: String(payload.sector || '').trim(),
@@ -225,6 +311,17 @@ export function normalizeWinnerPayload(payload = {}) {
     createdAt: payload.createdAt || new Date().toISOString(),
     updatedAt: payload.updatedAt || new Date().toISOString(),
   };
+  const sourceTradeId = String(payload.sourceTradeId || '').trim();
+  if (sourceTradeId) {
+    normalized.sourceTradeId = sourceTradeId;
+    const snapshot = normalizeSourceTradeSnapshot(payload.sourceTradeSnapshot || {});
+    if (Object.keys(snapshot).length) normalized.sourceTradeSnapshot = snapshot;
+    else delete normalized.sourceTradeSnapshot;
+  } else {
+    delete normalized.sourceTradeId;
+    delete normalized.sourceTradeSnapshot;
+  }
+  return normalized;
 }
 
 function includesText(entry, text) {
@@ -266,7 +363,6 @@ export function filterWinnerEntries(entries = [], filters = {}) {
   const minInitialMove = Number(filters.minInitialMove || 0);
   const maxDipBeforeMove = Number(filters.maxDipBeforeMove || 0);
   const maxStage4Decline = Number(filters.maxStage4Decline || 0);
-  const minMbi = Number(filters.minMbi || 0);
   const minMoveCount = Number(filters.minMoveCount || 0);
   const minBaseCount = Number(filters.minBaseCount || 0);
   const minAvgExpansion = Number(filters.minAvgExpansion || 0);
@@ -287,7 +383,6 @@ export function filterWinnerEntries(entries = [], filters = {}) {
     if (minInitialMove > 0 && !hasAtLeast(entry, 'initialMove', minInitialMove)) return false;
     if (maxDipBeforeMove > 0 && !hasAtMost(entry, 'dipBeforeMove', maxDipBeforeMove)) return false;
     if (maxStage4Decline > 0 && !hasAtMost(entry, 'stage4Decline', maxStage4Decline)) return false;
-    if (minMbi > 0 && !hasAtLeast(entry, 'mbiScore', minMbi)) return false;
     if (minMoveCount > 0 && !hasAtLeast(entry, 'moveCount', minMoveCount)) return false;
     if (minBaseCount > 0 && !hasAtLeast(entry, 'baseCount', minBaseCount)) return false;
     if (minAvgExpansion > 0 && !hasAtLeast(entry, 'avgExpansion', minAvgExpansion)) return false;
@@ -338,8 +433,6 @@ export function sortWinnerEntries(entries = [], sortKey = 'DATE_DESC') {
         return compareNullableNumbers(a.stage4Decline, b.stage4Decline, 'ASC');
       case 'CIRCUIT_DESC':
         return compareNullableNumbers(a.circuits, b.circuits, 'DESC');
-      case 'MBI_DESC':
-        return compareNullableNumbers(a.mbiScore, b.mbiScore, 'DESC');
       case 'NAME_ASC':
         return String(a.stockName || '').localeCompare(String(b.stockName || ''), undefined, { sensitivity: 'base' });
       case 'DATE_ASC': {

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic PERSISTENT base breakout chart</title><desc id="desc">Illustrative chart fixture for the TradeMaster showcase.</desc>
+  <rect width="1200" height="680" fill="#11121e"/><g stroke="#30304a" stroke-width="2"><path d="M80 100H1140M80 220H1140M80 340H1140M80 460H1140M80 580H1140"/><path d="M180 60V610M360 60V610M540 60V610M720 60V610M900 60V610"/></g>
+  <path d="M80 220 L155 250 L230 210 L305 300 L380 280 L455 370 L530 350 L605 390 L680 355 L755 420 L830 390 L905 300 L980 330 L1060 190 L1140 120" fill="none" stroke="#a78bfa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><rect x="430" y="300" width="260" height="120" rx="18" fill="none" stroke="#60a5fa" stroke-width="4" stroke-dasharray="12 10"/><text x="78" y="48" fill="#f8fafc" font-family="system-ui" font-size="30" font-weight="700">PERSISTENT · synthetic base breakout</text><text x="80" y="645" fill="#94a3b8" font-family="system-ui" font-size="22">Illustrative fixture · not market data</text>
+</svg>

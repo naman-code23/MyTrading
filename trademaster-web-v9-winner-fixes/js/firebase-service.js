@@ -11,6 +11,12 @@ function hasUsableFirebaseConfig(config) {
 }
 
 export async function createFirebaseService(config) {
+  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+    return {
+      ready: false,
+      reason: 'Firebase needs an HTTP(S) URL; file:// pages cannot run phone auth.',
+    };
+  }
   if (!hasUsableFirebaseConfig(config)) {
     return { ready: false, reason: 'Missing Firebase config.' };
   }
@@ -20,11 +26,15 @@ export async function createFirebaseService(config) {
     firebaseAuth,
     firebaseFirestore,
     firebaseStorage,
+    firebaseAppCheck,
   ] = await Promise.all([
     import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
     import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'),
     import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
     import('https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js'),
+    config.appCheckSiteKey && !String(config.appCheckSiteKey).includes('YOUR_')
+      ? import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js')
+      : Promise.resolve(null),
   ]);
 
   const { initializeApp } = firebaseApp;
@@ -38,12 +48,17 @@ export async function createFirebaseService(config) {
   const {
     getAuth,
     GoogleAuthProvider,
+    TwitterAuthProvider,
     browserLocalPersistence,
     setPersistence,
     onAuthStateChanged,
     signInWithPopup,
+    signInWithPhoneNumber,
+    linkWithPhoneNumber,
+    RecaptchaVerifier,
     signOut,
   } = firebaseAuth;
+  const { initializeAppCheck, ReCaptchaEnterpriseProvider } = firebaseAppCheck || {};
   const {
     getFirestore,
     collection,
@@ -56,6 +71,7 @@ export async function createFirebaseService(config) {
     onSnapshot,
     serverTimestamp,
     writeBatch,
+    runTransaction,
   } = firebaseFirestore;
 
   const app = initializeApp(config);
@@ -66,7 +82,35 @@ export async function createFirebaseService(config) {
   const storage = storageReady
     ? getStorage(app, bucketValue.startsWith('gs://') ? bucketValue : `gs://${bucketValue}`)
     : null;
+  let appCheck = null;
+  if (firebaseAppCheck && config.appCheckSiteKey && !String(config.appCheckSiteKey).includes('YOUR_')) {
+    try {
+      appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(config.appCheckSiteKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+    } catch (error) {
+      console.warn('Firebase App Check could not be initialized.', error);
+    }
+  }
   await setPersistence(auth, browserLocalPersistence);
+  let phoneConfirmation = null;
+  let phoneRecaptcha = null;
+  const twitterAvailable = config.twitterEnabled === true;
+
+  function resetPhoneRecaptcha() {
+    phoneRecaptcha?.clear?.();
+    phoneRecaptcha = null;
+  }
+
+  function getPhoneRecaptcha(containerId) {
+    resetPhoneRecaptcha();
+    phoneRecaptcha = new RecaptchaVerifier(auth, containerId, {
+      size: 'normal',
+      'expired-callback': () => { phoneConfirmation = null; },
+    });
+    return phoneRecaptcha;
+  }
 
   function tradeCollection(userId) {
     return collection(db, 'users', userId, 'trades');
@@ -85,6 +129,7 @@ export async function createFirebaseService(config) {
   }
 
   async function upsertProfile(user) {
+    const existing = await getDoc(profileDoc(user.uid));
     await setDoc(
       profileDoc(user.uid),
       {
@@ -92,7 +137,7 @@ export async function createFirebaseService(config) {
         email: user.email || '',
         photoURL: user.photoURL || '',
         updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
+        createdAt: existing.exists() ? existing.data().createdAt || serverTimestamp() : serverTimestamp(),
       },
       { merge: true },
     );
@@ -154,9 +199,21 @@ export async function createFirebaseService(config) {
     );
   }
 
+  function deserializeDocument(snapshot) {
+    const data = snapshot.data();
+    return {
+      id: snapshot.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt || null,
+      updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt || null,
+    };
+  }
+
   return {
     ready: true,
     storageReady,
+    twitterAvailable,
+    appCheckReady: Boolean(appCheck),
     auth,
     db,
     onAuthStateChanged(callback) {
@@ -169,8 +226,40 @@ export async function createFirebaseService(config) {
       await upsertProfile(result.user);
       return result.user;
     },
+    async signInWithTwitter() {
+      if (!twitterAvailable) throw new Error('X sign-in is not enabled for this demo.');
+      const provider = new TwitterAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      await upsertProfile(result.user);
+      return result.user;
+    },
     async signOut() {
       await signOut(auth);
+    },
+    async requestPhoneCode(phoneNumber, recaptchaContainerId = 'phoneRecaptcha') {
+      const normalized = String(phoneNumber || '').trim();
+      if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+        throw new Error('Enter a valid phone number with country code, for example +919876543210.');
+      }
+      const verifier = getPhoneRecaptcha(recaptchaContainerId);
+      phoneConfirmation = auth.currentUser
+        ? await linkWithPhoneNumber(auth.currentUser, normalized, verifier)
+        : await signInWithPhoneNumber(auth, normalized, verifier);
+      return { linking: Boolean(auth.currentUser) };
+    },
+    async confirmPhoneCode(code) {
+      if (!phoneConfirmation) throw new Error('Request a verification code first.');
+      const normalized = String(code || '').trim();
+      if (!/^\d{6}$/.test(normalized)) throw new Error('Enter the 6-digit verification code.');
+      const result = await phoneConfirmation.confirm(normalized);
+      phoneConfirmation = null;
+      resetPhoneRecaptcha();
+      await upsertProfile(result.user);
+      return result.user;
+    },
+    cancelPhoneAuth() {
+      phoneConfirmation = null;
+      resetPhoneRecaptcha();
     },
     async ensureDefaultSettings(userId) {
       const reference = settingsDoc(userId);
@@ -244,6 +333,26 @@ export async function createFirebaseService(config) {
         { merge: true },
       );
       return id;
+    },
+    async createWinnerIfAbsent(userId, entry) {
+      const id = entry.id || uid('winner');
+      const reference = doc(db, 'users', userId, 'winners', id);
+      return runTransaction(db, async (transaction) => {
+        const existing = await transaction.get(reference);
+        if (existing.exists()) return { created: false, entry: deserializeDocument(existing) };
+        transaction.set(reference, {
+          ...entry,
+          id,
+          createdAt: entry.createdAt || serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: false });
+        return { created: true, entry: { ...entry, id } };
+      });
+    },
+    async getWinner(userId, entryId) {
+      if (!entryId) return null;
+      const snapshot = await getDoc(doc(db, 'users', userId, 'winners', entryId));
+      return snapshot.exists() ? deserializeDocument(snapshot) : null;
     },
     async saveWinners(userId, entries) {
       return saveDocs(userId, 'winners', entries || []);

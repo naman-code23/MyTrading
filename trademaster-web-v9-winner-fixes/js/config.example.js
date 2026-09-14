@@ -8,6 +8,8 @@ window.TRADEMASTER_CONFIG = {
     // Older projects may use YOUR_PROJECT.appspot.com
     storageBucket: 'YOUR_STORAGE_BUCKET',
     messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    appId: 'YOUR_APP_ID'
+    appId: 'YOUR_APP_ID',
+    // Optional: reCAPTCHA Enterprise site key for Firebase App Check.
+    appCheckSiteKey: 'YOUR_RECAPTCHA_ENTERPRISE_SITE_KEY'
   }
 };

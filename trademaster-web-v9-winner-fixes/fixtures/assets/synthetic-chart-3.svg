@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic HAL tight flag chart</title><desc id="desc">Illustrative chart fixture for the TradeMaster showcase.</desc>
+  <rect width="1200" height="680" fill="#0d1520"/><g stroke="#25344a" stroke-width="2"><path d="M80 100H1140M80 220H1140M80 340H1140M80 460H1140M80 580H1140"/><path d="M180 60V610M360 60V610M540 60V610M720 60V610M900 60V610"/></g>
+  <path d="M80 530 L150 480 L220 510 L290 395 L360 420 L430 350 L500 372 L570 330 L640 350 L710 290 L780 315 L850 250 L920 275 L1000 180 L1070 215 L1140 95" fill="none" stroke="#22d3ee" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="M430 350 L500 372 L570 330 L640 350" fill="none" stroke="#fbbf24" stroke-width="10"/><text x="78" y="48" fill="#f8fafc" font-family="system-ui" font-size="30" font-weight="700">HAL · synthetic tight flag</text><text x="80" y="645" fill="#94a3b8" font-family="system-ui" font-size="22">Illustrative fixture · not market data</text>
+</svg>

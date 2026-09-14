@@ -1,0 +1,8 @@
+{
+  "name": "trademaster-web-v9-winner-fixes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}

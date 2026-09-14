@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic RELIANCE AVWAP reclaim chart</title><desc id="desc">Illustrative chart fixture for the TradeMaster showcase.</desc>
+  <rect width="1200" height="680" fill="#0b1220"/><g stroke="#23324a" stroke-width="2"><path d="M80 100H1140M80 220H1140M80 340H1140M80 460H1140M80 580H1140"/><path d="M180 60V610M360 60V610M540 60V610M720 60V610M900 60V610"/></g>
+  <path d="M80 520 L150 500 L210 535 L275 430 L340 450 L405 360 L470 380 L540 280 L605 310 L670 230 L740 260 L810 170 L875 205 L950 120 L1020 155 L1140 72" fill="none" stroke="#34d399" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M80 470 L1140 190" stroke="#60a5fa" stroke-width="4" stroke-dasharray="16 14"/><circle cx="670" cy="230" r="12" fill="#fbbf24"/><text x="78" y="48" fill="#f8fafc" font-family="system-ui" font-size="30" font-weight="700">RELIANCE · synthetic AVWAP reclaim</text><text x="80" y="645" fill="#94a3b8" font-family="system-ui" font-size="22">Illustrative fixture · not market data</text>
+</svg>

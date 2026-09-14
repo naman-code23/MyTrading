@@ -745,7 +745,7 @@ async function saveWinnerForm(event) {
   if (!draft || draft.saving) return;
   draft.saving = true; refs.saveWinnerBtn.disabled = true; setFormStatus(refs.winnerSaveStatus, state.ui.winnerImageDraft?.prepared ? 'Uploading screenshot…' : 'Saving example…', 'busy');
   const epoch = state.sessionEpoch;
-  let uploadedPath = ''; let pathToDelete = ''; let entry;
+  let uploadedPath = ''; let entry;
   try {
     entry = readWinnerForm();
     if (!entry.stockName && !entry.notes && !entry.imageUrl && !entry.moves.length) throw new Error('Add a stock name, note, or chart detail before saving.');
@@ -761,12 +761,10 @@ async function saveWinnerForm(event) {
       const upload = await state.storage.uploadWinnerImage({ winnerId: entry.id, blob: pending.blob, fileName: pending.fileName, contentType: pending.contentType });
       if (epoch !== state.sessionEpoch) throw new Error('Account changed while uploading. The new image was not attached to this account.');
       uploadedPath = upload.storagePath; entry.imageUrl = upload.downloadUrl; entry.imageStoragePath = upload.storagePath; entry.imageBytes = upload.sizeBytes; entry.imageContentType = upload.contentType; entry.imageWidth = pending.width; entry.imageHeight = pending.height;
-      if (existingPath && existingPath !== uploadedPath) pathToDelete = existingPath;
     } else if (!entry.imageUrl) {
-      if (existingPath) pathToDelete = existingPath;
       entry.imageStoragePath = ''; entry.imageBytes = null; entry.imageContentType = ''; entry.imageWidth = null; entry.imageHeight = null;
     } else if (entry.imageUrl !== existingUrl && existingPath) {
-      pathToDelete = existingPath; entry.imageStoragePath = ''; entry.imageBytes = null; entry.imageContentType = ''; entry.imageWidth = null; entry.imageHeight = null;
+      entry.imageStoragePath = ''; entry.imageBytes = null; entry.imageContentType = ''; entry.imageWidth = null; entry.imageHeight = null;
     }
     if (entry.sourceTradeId && !existing) {
       const result = await state.storage.createWinnerIfAbsent(entry);
@@ -778,9 +776,7 @@ async function saveWinnerForm(event) {
       await state.storage.saveWinner(entry);
     }
     if (epoch !== state.sessionEpoch) return;
-    if (pathToDelete && pathToDelete !== uploadedPath) {
-      try { await state.storage.deleteWinnerImage(pathToDelete); } catch (cleanupError) { console.warn('Old screenshot cleanup failed', cleanupError); setFormStatus(refs.winnerSaveStatus, 'Example saved, but the old screenshot could not be cleaned up. It remains usable.', 'error'); }
-    }
+    // Firestore-triggered cleanup removes the old referenced object after this write.
     closeWinnerModal(true); showToast(state.mode === 'demo' ? 'Winner example saved locally.' : 'Winner example saved to Firebase.', 'success');
   } catch (error) {
     console.error(error);
@@ -803,9 +799,7 @@ async function handleDeleteWinner(entryId) {
   if (!entry || !window.confirm(`Delete winner example ${entry.stockName || entryId}?`)) return false;
   try {
     await state.storage.deleteWinner(entryId);
-    if (entry.imageStoragePath) {
-      try { await state.storage.deleteWinnerImage(entry.imageStoragePath); } catch (cleanupError) { console.warn('Deleted winner image cleanup failed', cleanupError); showToast('Example deleted, but its screenshot cleanup failed. Check Firebase Storage later.', 'error'); }
-    }
+    // Firestore-triggered cleanup removes the referenced screenshot after the delete.
     showToast('Winner example deleted.', 'success'); return true;
   } catch (error) { console.error(error); setFormStatus(refs.winnerSaveStatus, friendlyError(error, 'Could not delete winner example.'), 'error'); showToast(friendlyError(error, 'Could not delete winner example.'), 'error'); return false; }
 }

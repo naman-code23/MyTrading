@@ -35,7 +35,7 @@ Enable Google and Phone providers, Firestore, Storage, and Hosting in the Fireba
 
 Phone sign-in requires reCAPTCHA and an authorized hosted domain. Use fictional Firebase test numbers for rehearsals. The UI does not silently merge separate provider UIDs; account linking remains a deliberate provider action.
 
-The rules are owner-scoped under `users/{uid}`. Storage winner images are stored under `users/{uid}/winner-images/{winnerId}/...`, are resized in the browser before upload, and are cleaned up after a confirmed record delete or replacement. A failed or uncertain save preserves the typed form and prepared image for reconciliation.
+The rules are owner-scoped under `users/{uid}`. Storage winner images are stored under `users/{uid}/winner-images/{winnerId}/...`, are resized in the browser before upload, and are cleaned up by the deployed Firestore trigger after a confirmed record delete or reference replacement. The browser only rolls back a newly uploaded object when its Firestore write definitively fails, because no trigger can observe an object that was never referenced. A failed or uncertain save preserves the typed form and prepared image for reconciliation.
 
 ## Showcase fixtures
 
@@ -51,13 +51,13 @@ Google Drive backup/restore uses the authenticated account's hidden `appDataFold
 
 ## Deployment boundary
 
-This implementation does not deploy or modify the live Firebase Hosting site. Review the rules and run the local/browser verification first, then deploy only as an explicit release action:
+This implementation does not deploy or modify the live Firebase Hosting site. The screenshot-cleanup Functions were deployed separately to Firebase project `trading-d5a0e`; Hosting, rules, and Storage changes remain explicit release actions. Review the rules and run the local/browser verification first, then deploy the complete release only when authorized:
 
 ```bash
-firebase deploy --only hosting,firestore,storage
+firebase deploy --only hosting,firestore,storage,functions
 ```
 
-Live Google, X/Twitter, SMS, Firestore, Storage, and App Check checks require provider credentials, a hosted authorized domain, or an emulator/console setup. See the verification document for exactly what was and was not exercised in this implementation pass.
+The Functions source is under `functions/` and is excluded from the Hosting artifact. GitHub source updates do not deploy Firebase services. The current Functions deployment uses Node.js 20, which Firebase reports will be decommissioned on 2026-10-30; upgrade the runtime before that boundary. Live Google, X/Twitter, SMS, Firestore, Storage, Functions, and App Check checks require provider credentials, a hosted authorized domain, or an emulator/console setup. See the verification document for exactly what was and was not exercised in this implementation pass.
 
 ## Key files
 
@@ -65,7 +65,8 @@ Live Google, X/Twitter, SMS, Firestore, Storage, and App Check checks require pr
 - `js/app.js` — UI state, auth/session isolation, calculator handoff, journal/winner flows
 - `js/trade-engine.js` — fill matching, P&L, filters, journal summaries, chart series, compatibility export
 - `js/winner-db.js` — normalization, pattern detail, deterministic linked-winner IDs, source snapshots
-- `js/storage.js` / `js/firebase-service.js` — demo/cloud persistence, auth, transaction-safe winner creation, image lifecycle
+- `js/storage.js` / `js/firebase-service.js` — demo/cloud persistence, auth, transaction-safe winner creation, upload rollback
+- `functions/index.js` / `functions/image-cleanup.js` — Firestore-triggered cleanup of obsolete Winner screenshot objects
 - `fixtures/showcase-fixtures.mjs` — synthetic trades, winners, and calculated manifest
 - `fixtures/seed-showcase-local.mjs` — isolated localStorage merge seed; refuses unrelated data and never calls `replaceAllData`
 - `tests/showcase.test.mjs` — calculator, journal, compatibility, winner-linking, and fixture tests

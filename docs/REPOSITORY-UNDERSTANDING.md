@@ -36,7 +36,7 @@ Paths below are relative to `trademaster-web-v9-winner-fixes/`.
 | Journal performance | Closed-trade cumulative and monthly P&L charts, using the same filters as the summary/cards | `js/charts.js`, `js/trade-engine.js`, `js/app.js` |
 | Removed Dashboard / AI Coach | No current surface; old modules/snapshots are retained only as historical references | legacy snapshots |
 | Winner DB | Chart-pattern library with moves, bases, expansions, notes, tags, filters and screenshot metadata | `js/winner-db.js`, `js/app.js` |
-| Image processing | Browser resize to a default maximum dimension of 1600px and WebP/JPEG compression | `js/image-tools.js` |
+| Image processing | Browser resize to a default maximum dimension of 1600px and WebP/JPEG compression; backend cleanup of obsolete Storage objects | `js/image-tools.js`, `functions/` |
 | Settings / export / backup | Local or cloud settings; CSV/JSON export; optional Google Drive app-data backup and restore | `js/storage.js`, `js/firebase-service.js` |
 
 The financial calculation formulas were read to understand the application; this inspection is not a validation of current trading costs or strategy performance. The showcase fixture is synthetic and must not be presented as a live result.
@@ -48,7 +48,7 @@ The financial calculation formulas were read to understand the application; this
 `createStorageLayer()` selects one of two paths:
 
 - **Local demo:** localStorage records under `tmpro_cloud_settings`, `tmpro_cloud_trades` and `tmpro_cloud_winners`.
-- **Cloud:** `createFirebaseService()` dynamically imports Firebase web SDK 10.12.2, uses Google popup sign-in, listens to Firestore collections, and uploads screenshots to Storage.
+- **Cloud:** `createFirebaseService()` dynamically imports Firebase web SDK 10.12.2, uses Google popup sign-in, listens to Firestore collections, and uploads screenshots to Storage. The Functions package reacts to Winner deletes and screenshot-reference changes to delete obsolete Storage objects.
 
 The checked-in configurations are non-placeholder Firebase configurations. Their existence does not establish whether the associated backend, providers, rules, billing or deployment are currently working. No existing cloud data was accessed during this review.
 
@@ -78,7 +78,7 @@ The checked-in Firestore rules constrain the listed paths to their owner, but do
 7. **Restore deletes before replacing.** Cloud `replaceAllData()` deletes existing trades and winners before saving the new payload. Keep destructive restore outside the core demo until a staged, recoverable import exists.
 8. **Drive authorization can change Firebase accounts.** Backup/restore use `signInWithPopup` for additional Drive scope. That needs explicit account-consistency handling once phone users exist. Retain JSON export and defer Drive flow changes.
 9. **Image URLs and image access are different concerns.** Uploads store a download URL and set long-lived public cache metadata. For a private journal, prefer authenticated SDK blob downloads by storage path, with suitable CORS and cache handling. Existing download tokens need separate revocation/migration if privacy guarantees change. See [Storage download options](https://firebase.google.com/docs/storage/web/download-files).
-10. **Hosting config serves the entire app directory.** Narrow the deployment artifact before placing backend code or additional files underneath that directory. Firebase Hosting is appropriate for the static app; a framework migration is unnecessary.
+10. **Hosting config serves the entire app directory.** The Functions source is explicitly excluded, but docs, tests and fixtures still need deliberate deployment hygiene before a production release. Firebase Hosting is appropriate for the static app; a framework migration is unnecessary.
 
 ## Initial verification before changes
 
@@ -95,4 +95,4 @@ The local checkout saves the source offline. Running the existing cloud applicat
 
 ## Verification boundary
 
-Current test evidence, browser screenshots, the five-minute demo script, and live Firebase checks that remain unexercised are recorded in [SHOWCASE-VERIFICATION.md](SHOWCASE-VERIFICATION.md). This is a local source change; it has not been pushed or deployed. The original Git archive remains an unchanged backup.
+Current test evidence, browser screenshots, the five-minute demo script, and live Firebase checks that remain unexercised are recorded in [SHOWCASE-VERIFICATION.md](SHOWCASE-VERIFICATION.md). The source is tracked in GitHub, but Firebase services still require a separate deploy. The original Git archive remains an unchanged backup.

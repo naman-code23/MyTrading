@@ -21,7 +21,7 @@ PNV is the specialized, team-relevant part of this proposal. It should not be de
 | App Check | Keep; core | Shows app attestation alongside user authentication and owner authorization |
 | Analytics | Deferred | Useful in a longer-lived product, but unnecessary instrumentation for this one-week learning demo |
 | Normal PNV | Conditional | Excellent team alignment if a supported Android/carrier configuration is actually available |
-| Functions | Conditional on PNV or another real backend need | PNV requires trusted proof verification and custom-token issuance; ordinary client CRUD does not need a new wrapper |
+| Functions | Keep for backend work | Firestore-triggered screenshot cleanup is now a concrete web need; PNV proof verification and custom-token issuance remain a future conditional use. Ordinary client CRUD still does not need a wrapper |
 | Remote Config | First optional extension | Demonstrate controlled availability and fallback for the PNV rollout |
 | Crashlytics | Defer | Only relevant if an Android companion is built and maintained beyond this demo |
 | Cloud Messaging | Defer | Useful for opt-in journal review reminders, but no notification requirement exists yet |

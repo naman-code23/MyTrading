@@ -64,8 +64,8 @@ Expected fixture headline: 12 trades, 10 closed, 6 wins, 3 losses, 1 breakeven, 
 
 - Open a winner form, choose a screenshot, then close it. The discard prompt protects the prepared image draft.
 - In cloud mode, disable network or use a rules-denied account during a save. The form reports whether the result is failed or uncertain and retains typed data/prepared image when retry/reconciliation is safe.
-- No screenshot cleanup is attempted until a new upload is confirmed and the record write is definitive. Record deletion happens before old-image cleanup.
+- The browser does not delete obsolete referenced screenshots. After deployment, the Firestore Functions triggers clean the old object when a Winner is deleted or its `imageStoragePath` changes. The browser still rolls back a newly uploaded object when a definitive Firestore write failure leaves it unreferenced.
 
 ## Live Firebase rehearsal boundary
 
-The five-minute script is local and synthetic. It does not sign in, send an SMS, upload Storage bytes, create Firestore records, invoke Drive backup, or exercise App Check. Those checks require an authorized HTTPS Hosting domain, provider credentials/test numbers, and an explicitly selected test account or Firebase emulator. Deployment is not part of this implementation task.
+The five-minute script is local and synthetic. It does not sign in, send an SMS, upload Storage bytes, create Firestore records, invoke Drive backup, exercise App Check, or invoke deployed screenshot-cleanup Functions. The Functions are deployed in Firebase project `trading-d5a0e`, but trigger delivery and live Storage deletion still require an authorized test account or Firebase emulator. Hosting deployment and the remaining live checks are separate release actions.

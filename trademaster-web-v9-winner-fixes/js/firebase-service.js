@@ -48,7 +48,6 @@ export async function createFirebaseService(config) {
   const {
     getAuth,
     GoogleAuthProvider,
-    TwitterAuthProvider,
     browserLocalPersistence,
     setPersistence,
     onAuthStateChanged,
@@ -96,8 +95,6 @@ export async function createFirebaseService(config) {
   await setPersistence(auth, browserLocalPersistence);
   let phoneConfirmation = null;
   let phoneRecaptcha = null;
-  const twitterAvailable = config.twitterEnabled === true;
-
   function resetPhoneRecaptcha() {
     phoneRecaptcha?.clear?.();
     phoneRecaptcha = null;
@@ -212,7 +209,6 @@ export async function createFirebaseService(config) {
   return {
     ready: true,
     storageReady,
-    twitterAvailable,
     appCheckReady: Boolean(appCheck),
     auth,
     db,
@@ -222,13 +218,6 @@ export async function createFirebaseService(config) {
     async signIn() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
-      await upsertProfile(result.user);
-      return result.user;
-    },
-    async signInWithTwitter() {
-      if (!twitterAvailable) throw new Error('X sign-in is not enabled for this demo.');
-      const provider = new TwitterAuthProvider();
       const result = await signInWithPopup(auth, provider);
       await upsertProfile(result.user);
       return result.user;
@@ -386,83 +375,6 @@ export async function createFirebaseService(config) {
       } catch (error) {
         if (error?.code !== 'storage/object-not-found') throw error;
       }
-    },
-    async backupToDrive(user, payload) {
-      const provider = new GoogleAuthProvider();
-      provider.addScope('https://www.googleapis.com/auth/drive.appdata');
-      provider.setCustomParameters({ prompt: 'consent' });
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const accessToken = credential?.accessToken;
-      if (!accessToken) throw new Error('Could not get Google Drive access token.');
-
-      const filename = 'trademasterpro-backup.json';
-      const metadata = {
-        name: filename,
-        parents: ['appDataFolder'],
-        mimeType: 'application/json',
-      };
-      const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${filename}' and 'appDataFolder' in parents and trashed=false`)}&spaces=appDataFolder&fields=files(id,name,modifiedTime)`;
-      const listResponse = await fetch(listUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!listResponse.ok) throw new Error('Failed to inspect Google Drive backup files.');
-      const listData = await listResponse.json();
-      const existing = listData.files?.[0];
-
-      if (existing?.id) {
-        const updateResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`, {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload, null, 2),
-        });
-        if (!updateResponse.ok) throw new Error('Failed to update Google Drive backup.');
-        return { fileId: existing.id, updated: true };
-      }
-
-      const boundary = 'tradeMasterBoundary';
-      const multipartBody =
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-        `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(payload, null, 2)}\r\n` +
-        `--${boundary}--`;
-
-      const createResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': `multipart/related; boundary=${boundary}`,
-        },
-        body: multipartBody,
-      });
-      if (!createResponse.ok) throw new Error('Failed to create Google Drive backup.');
-      const createData = await createResponse.json();
-      return { fileId: createData.id, updated: false };
-    },
-    async restoreFromDrive() {
-      const provider = new GoogleAuthProvider();
-      provider.addScope('https://www.googleapis.com/auth/drive.appdata');
-      provider.setCustomParameters({ prompt: 'consent' });
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const accessToken = credential?.accessToken;
-      if (!accessToken) throw new Error('Could not get Google Drive access token.');
-      const filename = 'trademasterpro-backup.json';
-      const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${filename}' and 'appDataFolder' in parents and trashed=false`)}&spaces=appDataFolder&fields=files(id,name,modifiedTime)`;
-      const listResponse = await fetch(listUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!listResponse.ok) throw new Error('Failed to inspect Google Drive backup files.');
-      const listData = await listResponse.json();
-      const existing = listData.files?.[0];
-      if (!existing?.id) throw new Error('No backup file found in Google Drive appDataFolder.');
-      const dataResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!dataResponse.ok) throw new Error('Failed to download backup file from Google Drive.');
-      return await dataResponse.json();
     },
   };
 }

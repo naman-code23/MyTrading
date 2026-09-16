@@ -21,26 +21,9 @@ import {
   normalizeWinnerPayload,
 } from '../js/winner-db.js';
 import { calculateShowcaseManifest, showcaseManifest, syntheticTrades, syntheticWinners } from '../fixtures/showcase-fixtures.mjs';
-import { seedShowcaseLocal } from '../fixtures/seed-showcase-local.mjs';
-import { createDemoStorage } from '../js/storage.js';
+import { createStorageLayer } from '../js/storage.js';
 
 const repoRoot = path.resolve(new URL('..', import.meta.url).pathname);
-
-async function withBrowserStorage(callback) {
-  const previousLocalStorage = globalThis.localStorage;
-  const previousWindow = globalThis.window;
-  const values = new Map();
-  globalThis.localStorage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, String(value)),
-    removeItem: (key) => values.delete(key),
-  };
-  globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  try { return await callback(); } finally {
-    globalThis.localStorage = previousLocalStorage;
-    globalThis.window = previousWindow;
-  }
-}
 
 test('showcase fixture manifest has the requested deterministic shape', () => {
   const manifestFile = JSON.parse(fs.readFileSync(path.join(repoRoot, 'fixtures/showcase-manifest.json'), 'utf8'));
@@ -64,11 +47,33 @@ test('showcase fixture manifest has the requested deterministic shape', () => {
 test('the current UI contract is exactly three tabs and excludes retired surfaces', () => {
   const html = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(repoRoot, 'js/app.js'), 'utf8');
+  const storage = fs.readFileSync(path.join(repoRoot, 'js/storage.js'), 'utf8');
+  const firebaseService = fs.readFileSync(path.join(repoRoot, 'js/firebase-service.js'), 'utf8');
   const tabs = [...html.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(tabs, ['calculator', 'journal', 'winners']);
   assert.doesNotMatch(html, /dashboard|playbook|sell check|ai coach|supermbi/i);
+  assert.doesNotMatch(html, /google drive|restore from drive|import json|export json/i);
+  assert.doesNotMatch(html, /twitter|sign in with x/i);
   assert.doesNotMatch(app, /from ['"]\.\/mbi\.js['"]/i);
   assert.match(app, /createLinkedWinnerDraft/);
+  assert.doesNotMatch(app, /mode=demo|localStorage|createDemoStorage/i);
+  assert.doesNotMatch(app, /backupToDrive|restoreFromDrive|replaceAllData|importJson|exportJson/i);
+  assert.doesNotMatch(app, /TwitterAuthProvider|signInWithTwitter|twitterAvailable|twitterEnabled/i);
+  assert.doesNotMatch(storage, /localStorage|createDemoStorage/i);
+  assert.doesNotMatch(storage, /backupToDrive|restoreFromDrive|replaceAllData/i);
+  assert.doesNotMatch(storage, /signInWithTwitter|twitterAvailable|twitterEnabled/i);
+  assert.doesNotMatch(firebaseService, /TwitterAuthProvider|signInWithTwitter|twitterAvailable|twitterEnabled/i);
+});
+
+test('storage refuses to start without Firebase configuration instead of falling back locally', async () => {
+  await assert.rejects(() => createStorageLayer({}), /Missing Firebase config/);
+  const previousWindow = globalThis.window;
+  globalThis.window = { location: { protocol: 'file:' } };
+  try {
+    await assert.rejects(() => createStorageLayer({ apiKey: 'configured', authDomain: 'example.firebaseapp.com', projectId: 'example' }), /HTTP\(S\)/);
+  } finally {
+    globalThis.window = previousWindow;
+  }
 });
 
 test('Firebase rules preserve owner isolation and server-only verification paths', () => {
@@ -151,28 +156,4 @@ test('winner normalization preserves historical fields but removes derived value
   assert.equal(normalized.mbiScore, 88);
   assert.notDeepEqual(normalized.pattern, { stale: true });
   assert.equal(normalized.effectiveMove, 36.8);
-});
-
-test('demo winner create-if-absent is idempotent', async () => {
-  await withBrowserStorage(async () => {
-    const storage = createDemoStorage();
-    const entry = syntheticWinners[0];
-    const first = await storage.createWinnerIfAbsent(entry);
-    const second = await storage.createWinnerIfAbsent({ ...entry, notes: 'must not overwrite' });
-    assert.equal(first.created, true);
-    assert.equal(second.created, false);
-    assert.equal(second.entry.notes, entry.notes);
-  });
-});
-
-test('showcase seed merges only its marker and is safe to repeat', () => {
-  const values = new Map();
-  const storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, String(value)),
-  };
-  assert.deepEqual(seedShowcaseLocal(storage), { datasetMarker: 'trademaster-showcase-synthetic-v1', trades: 12, winners: 4 });
-  assert.deepEqual(seedShowcaseLocal(storage), { datasetMarker: 'trademaster-showcase-synthetic-v1', trades: 12, winners: 4 });
-  values.set('tmpro_cloud_trades', JSON.stringify([{ id: 'user-data' }]));
-  assert.throws(() => seedShowcaseLocal(storage), /Refusing to seed trades/);
 });

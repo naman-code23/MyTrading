@@ -6,7 +6,7 @@ The complete Git repository is saved at `/Users/naman/Documents/Coding/MyTrading
 
 ## Current showcase implementation
 
-The 2026-09-14 showcase pass reduces the local v9 surface to exactly three tabs: Calculator, Journal, and Winner Database. MBI, Playbook, Sell Check, AI Coach, and the standalone Dashboard are not imported or rendered. Journal performance contains only the two closed-trade charts requested by the showcase. Legacy MBI fields remain in normalized storage/export compatibility paths and are not current UI or filter logic. Older snapshots and the offline Git archive remain unchanged.
+The 2026-09-14 showcase pass reduces the v9 surface to exactly three tabs: Calculator, Journal, and Winner Database. MBI, Playbook, Sell Check, AI Coach, and the standalone Dashboard are not imported or rendered. Journal performance contains only the two closed-trade charts requested by the showcase. Legacy MBI fields remain in normalized storage/export compatibility paths and are not current UI or filter logic. Older snapshots and the offline Git archive remain unchanged.
 
 ## Product and recommended baseline
 
@@ -21,7 +21,7 @@ The repository contains four parallel static web-app snapshots:
 | `trademaster-web-v8-winner-image-upload` | Adds Winner DB and image uploads; also contains a local assistant |
 | `trademaster-web-v9-winner-fixes` | Highest-numbered snapshot; simplifies the Winner DB implementation and removes the separate local assistant |
 
-Use v9 as the local showcase baseline. This is an inference from the repository structure and comparison, not confirmation that v9 is the currently deployed website. Preserve the other snapshots as references. Do not combine their code indiscriminately.
+Use v9 as the cloud-backed product baseline. This is an inference from the repository structure and comparison, not confirmation that v9 is the currently deployed website. Preserve the other snapshots as references. Do not combine their code indiscriminately.
 
 ## Workflows and code map
 
@@ -37,7 +37,7 @@ Paths below are relative to `trademaster-web-v9-winner-fixes/`.
 | Removed Dashboard / AI Coach | No current surface; old modules/snapshots are retained only as historical references | legacy snapshots |
 | Winner DB | Chart-pattern library with moves, bases, expansions, notes, tags, filters and screenshot metadata | `js/winner-db.js`, `js/app.js` |
 | Image processing | Browser resize to a default maximum dimension of 1600px and WebP/JPEG compression; backend cleanup of obsolete Storage objects | `js/image-tools.js`, `functions/` |
-| Settings / export / backup | Local or cloud settings; CSV/JSON export; optional Google Drive app-data backup and restore | `js/storage.js`, `js/firebase-service.js` |
+| Settings / export | Cloud settings; browser-generated CSV export | `js/storage.js`, `js/firebase-service.js` |
 
 The financial calculation formulas were read to understand the application; this inspection is not a validation of current trading costs or strategy performance. The showcase fixture is synthetic and must not be presented as a live result.
 
@@ -45,10 +45,7 @@ The financial calculation formulas were read to understand the application; this
 
 `index.html` loads configuration, Chart.js from a CDN, and `js/app.js` as an ES module. There is no package manifest, bundler, application server or automated test suite in the tracked checkout. v9 contains roughly 5,900 lines of JavaScript, including a roughly 2,300-line UI controller.
 
-`createStorageLayer()` selects one of two paths:
-
-- **Local demo:** localStorage records under `tmpro_cloud_settings`, `tmpro_cloud_trades` and `tmpro_cloud_winners`.
-- **Cloud:** `createFirebaseService()` dynamically imports Firebase web SDK 10.12.2, uses Google popup sign-in, listens to Firestore collections, and uploads screenshots to Storage. The Functions package reacts to Winner deletes and screenshot-reference changes to delete obsolete Storage objects.
+`createStorageLayer()` has one persistence path: `createFirebaseService()` dynamically imports Firebase web SDK 10.12.2, uses Google popup sign-in, listens to Firestore collections, and uploads screenshots to Storage. Missing configuration or a `file://` origin is a startup error; there is no browser-storage fallback. The Functions package reacts to Winner deletes and screenshot-reference changes to delete obsolete Storage objects.
 
 The checked-in configurations are non-placeholder Firebase configurations. Their existence does not establish whether the associated backend, providers, rules, billing or deployment are currently working. No existing cloud data was accessed during this review.
 
@@ -71,14 +68,12 @@ The checked-in Firestore rules constrain the listed paths to their owner, but do
 
 1. **Identity is the main compatibility boundary.** Every journal and image belongs to a UID. Creating an unrelated phone-auth account will show an empty workspace, even when the human already has a Google account. Preserve the UID through explicit linking.
 2. **Real-time listeners already exist.** Demonstrate them across Android and web; there is no reason to add a second real-time database.
-3. **Durable web offline caching is not configured.** `getFirestore(app)` uses the default cache. Local demo storage is a separate mode, not an offline copy of the cloud journal. See [Firestore offline behavior](https://firebase.google.com/docs/firestore/manage-data/enable-offline).
-4. **A save waits for cloud operations.** `saveTrade` and `saveWinner` first read the existing document and then await a write. If adding an offline-edit demo, explicitly address pending writes and UI completion instead of assuming a cache setting solves everything.
-5. **Collection listeners load whole histories.** Fine for a small onboarding dataset; pagination and summary maintenance belong after the identity demo works.
+3. **Durable web offline caching is not configured.** `getFirestore(app)` uses the default cache. The app requires Firebase and does not present browser-local journal data when offline. See [Firestore offline behavior](https://firebase.google.com/docs/firestore/manage-data/enable-offline).
+4. **A save waits for cloud operations.** `saveTrade` and `saveWinner` first read the existing document and then await a write. If adding offline editing later, explicitly address pending writes and UI completion instead of assuming a cache setting solves everything.
+5. **Collection listeners load whole histories.** Fine for a small onboarding dataset; pagination and summary maintenance belong after the first live identity flow works.
 6. **Profile creation time is overwritten.** `upsertProfile()` writes a fresh `createdAt` during every Google sign-in. Correct this when centralizing profile initialization for all sign-in providers.
-7. **Restore deletes before replacing.** Cloud `replaceAllData()` deletes existing trades and winners before saving the new payload. Keep destructive restore outside the core demo until a staged, recoverable import exists.
-8. **Drive authorization can change Firebase accounts.** Backup/restore use `signInWithPopup` for additional Drive scope. That needs explicit account-consistency handling once phone users exist. Retain JSON export and defer Drive flow changes.
-9. **Image URLs and image access are different concerns.** Uploads store a download URL and set long-lived public cache metadata. For a private journal, prefer authenticated SDK blob downloads by storage path, with suitable CORS and cache handling. Existing download tokens need separate revocation/migration if privacy guarantees change. See [Storage download options](https://firebase.google.com/docs/storage/web/download-files).
-10. **Hosting config serves the entire app directory.** The Functions source is explicitly excluded, but docs, tests and fixtures still need deliberate deployment hygiene before a production release. Firebase Hosting is appropriate for the static app; a framework migration is unnecessary.
+7. **Image URLs and image access are different concerns.** Uploads store a download URL and set long-lived public cache metadata. For a private journal, prefer authenticated SDK blob downloads by storage path, with suitable CORS and cache handling. Existing download tokens need separate revocation/migration if privacy guarantees change. See [Storage download options](https://firebase.google.com/docs/storage/web/download-files).
+8. **Hosting config serves the entire app directory.** The Functions source is explicitly excluded, but docs, tests and fixtures still need deliberate deployment hygiene before a production release. Firebase Hosting is appropriate for the static app; a framework migration is unnecessary.
 
 ## Initial verification before changes
 
@@ -95,4 +90,4 @@ The local checkout saves the source offline. Running the existing cloud applicat
 
 ## Verification boundary
 
-Current test evidence, browser screenshots, the five-minute demo script, and live Firebase checks that remain unexercised are recorded in [SHOWCASE-VERIFICATION.md](SHOWCASE-VERIFICATION.md). The source is tracked in GitHub, but Firebase services still require a separate deploy. The original Git archive remains an unchanged backup.
+Historical test evidence, browser screenshots, and live Firebase checks that remain unexercised are recorded in [SHOWCASE-VERIFICATION.md](SHOWCASE-VERIFICATION.md). The source is tracked in GitHub, but Firebase services still require a separate deploy. The original Git archive remains an unchanged backup.

@@ -1,8 +1,8 @@
 # TradeMaster: private journal access with optional live PNV
 
-Prepared 2026-09-12 against commit `17c2d39a3b09d3dc7d6bc5793dc359498b406d91`; updated for the 2026-09-14 three-tab showcase. The web baseline is Calculator, Journal, and Winner Database with Google and standard SMS phone auth/linking; optional X/Twitter remains explicitly gated. SIM-less PNV is excluded, normal PNV is conditional on live carrier feasibility, and MBI/Playbook/Sell Check/Dashboard/AI Coach are not current UI surfaces. Read [the repository assessment](REPOSITORY-UNDERSTANDING.md) for the current architecture and verification limits.
+Prepared 2026-09-12 against commit `17c2d39a3b09d3dc7d6bc5793dc359498b406d91`; updated for the 2026-09-14 three-tab showcase. The web baseline is Calculator, Journal, and Winner Database with Google and standard SMS phone auth/linking. SIM-less PNV is excluded, normal PNV is conditional on live carrier feasibility, and MBI/Playbook/Sell Check/Dashboard/AI Coach are not current UI surfaces. Read [the repository assessment](REPOSITORY-UNDERSTANDING.md) for the current architecture and verification limits.
 
-**Recommendation:** use the v9 three-tab web app with Google and linked SMS phone authentication as the dependable baseline; show X/Twitter only when deliberately enabled. Add normal carrier-backed Firebase PNV through a small native Android companion only after confirming a supported device/carrier and production-enabled project. Analytics and Crashlytics are deliberately out of scope for this one-week learning project. SIM-less PNV is outside scope. See [the service assessment](FIREBASE-SERVICE-ASSESSMENT.md) for the evidence and add/remove decisions.
+**Recommendation:** use the v9 three-tab web app with Google and linked SMS phone authentication as the dependable baseline. Add normal carrier-backed Firebase PNV through a small native Android companion only after confirming a supported device/carrier and production-enabled project. Analytics and Crashlytics are deliberately out of scope for this one-week learning project. SIM-less PNV is outside scope. See [the service assessment](FIREBASE-SERVICE-ASSESSMENT.md) for the evidence and add/remove decisions.
 
 The pitch to Firebase leads: “A user opens the same private Calculator, Journal, and Winner Database through Google or verified-phone sign-in, captures chart evidence, and sees it sync across devices. Where carrier verification is supported, PNV removes SMS friction. We explain failures and enforce account isolation.”
 
@@ -13,7 +13,7 @@ Keep the calculator, importer, trade engine, and Winner model in their existing 
 | Service | Existing or new | Concrete responsibility |
 | --- | --- | --- |
 | Firebase Phone Number Verification | Conditional; live carrier only | Android carrier-backed phone verification without SMS OTP |
-| Firebase Authentication | Existing; extend | Stable identity across Google, optional X/Twitter, linked phone SMS and PNV custom-token sign-in |
+| Firebase Authentication | Existing; extend | Stable identity across Google, linked phone SMS and PNV custom-token sign-in |
 | Cloud Functions for Firebase | Current for screenshot cleanup; conditional for PNV | Delete obsolete Winner screenshot objects from Firestore lifecycle triggers; later validate PNV proof, link verified numbers and issue Firebase custom tokens if the Android branch proceeds |
 | Cloud Firestore | Existing; retain | Same per-UID trades, winners and settings on both clients; server-owned verification status |
 | Cloud Storage for Firebase | Existing; refine | Compressed chart screenshots associated with Winner records |
@@ -23,7 +23,7 @@ Keep the calculator, importer, trade engine, and Winner model in their existing 
 
 Use the Local Emulator Suite for backend/rules tests. This is development tooling, not another product feature. Firebase Hosting fits static apps; App Hosting adds no needed capability here. [Hosting documentation](https://firebase.google.com/docs/hosting)
 
-The core app needs Auth, Firestore, Storage, Hosting and App Check. Google is the default provider; X/Twitter is an optional additional OAuth provider. The current web baseline also uses Functions for trusted screenshot lifecycle cleanup. Retain the future PNV Functions branch for proof validation, account linking and custom-token issuance. Remote Config is the first optional extension for controlling PNV availability and fallback UI. Do not add Realtime Database, SQL Connect, notifications, live quotes, broker execution or an LLM to the first milestone. Journal statistics are ordinary closed-trade summaries; MBI fields are compatibility-only.
+The core app needs Auth, Firestore, Storage, Hosting and App Check. Google and verified phone are the supported web sign-in methods. The current web baseline also uses Functions for trusted screenshot lifecycle cleanup. Retain the future PNV Functions branch for proof validation, account linking and custom-token issuance. Remote Config is the first optional extension for controlling PNV availability and fallback UI. Do not add Realtime Database, SQL Connect, notifications, live quotes, broker execution or an LLM to the first milestone. Journal statistics are ordinary closed-trade summaries; MBI fields are compatibility-only.
 
 ## 2. What “OTP bypass” means in this project
 
@@ -137,7 +137,7 @@ If live PNV is unavailable by the agreed cutoff, deliver the web baseline and re
 | Existing location | Planned change |
 | --- | --- |
 | `trademaster-web-v9-winner-fixes/js/firebase-service.js` | Account linking, central profile initialization, App Check and callable access, authenticated image reads |
-| `trademaster-web-v9-winner-fixes/js/storage.js` | Expose identity/verification operations while retaining local demo behavior |
+| `trademaster-web-v9-winner-fixes/js/storage.js` | Expose identity/verification operations through the cloud-only persistence layer |
 | `trademaster-web-v9-winner-fixes/js/app.js` and `index.html` | Account controls, verification status, pending/error states; retain journal calculations |
 | `firestore.rules`, `storage.rules` | Validate new data boundaries and retain per-user isolation |
 | `firebase.json` | Explicit Hosting exclusion and Functions source configuration; keep backend files outside served content |
@@ -188,4 +188,4 @@ The most useful onboarding output beyond the app is a short developer-experience
 
 Budget for a billing-enabled demo project where required. Limit Function instances, verification attempts, upload sizes and demo dataset size. Configure budget alerts, but do not treat them as hard spending caps. Recheck service pricing before implementation; this plan makes no claim that the entire project runs free.
 
-The web implementation now includes Google, optional X/Twitter, SMS phone sign-in/linking, and Firestore-triggered screenshot cleanup. The next step is manual Firebase-console setup, Functions deployment, and a live hosted-domain/Storage lifecycle test. Confirm live PNV feasibility separately before adding the Android/PNV branch. The scope can finish without carrier access. Add optional services only after the access, data and protection flows work.
+The web implementation now includes Google, SMS phone sign-in/linking, and Firestore-triggered screenshot cleanup. The next step is manual Firebase-console setup, Functions deployment, and a live hosted-domain/Storage lifecycle test. Confirm live PNV feasibility separately before adding the Android/PNV branch. The scope can finish without carrier access. Add optional services only after the access, data and protection flows work.

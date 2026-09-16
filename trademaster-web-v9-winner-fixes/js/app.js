@@ -46,7 +46,6 @@ import {
 const chartManager = createChartManager();
 const state = {
   storage: null,
-  mode: 'demo',
   user: null,
   sessionEpoch: 0,
   settings: { ...defaultSettings },
@@ -77,17 +76,16 @@ let modalWinnerSnapshot = null;
 
 function initRefs() {
   for (const id of [
-    'mainTabs', 'signInBtn', 'phoneSignInBtn', 'twitterSignInBtn', 'signOutBtn', 'authStatus', 'accountMenuBtn', 'accountSignOutBtn',
+    'mainTabs', 'signInBtn', 'phoneSignInBtn', 'signOutBtn', 'authStatus', 'accountMenuBtn', 'accountSignOutBtn',
     'accountModal', 'accountModalCopy', 'closeAccountModalBtn', 'openAccountFromJournalBtn',
     'settingsPnlMethod', 'settingsCurrency', 'saveSettingsBtn', 'settingsSaveStatus',
-    'backupDriveBtn', 'restoreDriveBtn', 'importJsonBtn', 'importJsonInput',
     'phoneAuthModal', 'phoneAuthForm', 'phoneAuthTitle', 'phoneNumberStep', 'phoneCodeStep',
     'phoneNumberInput', 'phoneCodeInput', 'requestPhoneCodeBtn', 'confirmPhoneCodeBtn',
     'closePhoneAuthBtn', 'restartPhoneAuthBtn', 'phoneAuthStatus', 'journalAccessNotice',
     'winnerAccessNotice', 'journalSummaryCards', 'journalStatsCards', 'journalStatsNote',
     'journalFilterSummary', 'importSummary', 'journalChartsEmpty', 'journalPerformanceDetails',
     'journalTable', 'equityChart', 'monthlyChart', 'strategyFilter', 'openTradeModalBtn', 'importTradebookBtn', 'importTradebookInput',
-    'exportCsvBtn', 'exportJsonBtn', 'tradeModal', 'tradeForm', 'tradeModalTitle', 'closeTradeModalBtn',
+    'exportCsvBtn', 'tradeModal', 'tradeForm', 'tradeModalTitle', 'closeTradeModalBtn',
     'tradeId', 'tradeSymbol', 'tradeDirection', 'tradeTimeframe', 'tradeStrategy', 'tradePlannedRisk',
     'tradePlannedStop', 'tradeDipBeforeMove', 'tradeTags', 'tradeNotes', 'fillsContainer',
     'addBuyFillBtn', 'addSellFillBtn', 'tradeMetricsPreview', 'tradeSaveStatus', 'saveTradeBtn',
@@ -148,7 +146,7 @@ function setFormStatus(ref, message = '', kind = '') {
 }
 
 function isPrivateDataAvailable() {
-  return state.mode === 'demo' || Boolean(state.user);
+  return Boolean(state.user);
 }
 
 function getCurrency() {
@@ -156,7 +154,7 @@ function getCurrency() {
 }
 
 function canUploadWinnerImages() {
-  return state.mode === 'cloud' && Boolean(state.user) && Boolean(state.storage?.storageAvailable);
+  return Boolean(state.user) && Boolean(state.storage?.storageAvailable);
 }
 
 function clearWinnerImageDraft() {
@@ -170,9 +168,9 @@ function looksLikeViewableImageUrl(value = '') {
 }
 
 function winnerImageEmptyState() {
-  return canUploadWinnerImages()
-    ? 'Choose a screenshot or paste an external image URL.'
-    : 'Paste an external image URL. Firebase Storage uploads are available after any Firebase sign-in.';
+  if (canUploadWinnerImages()) return 'Choose a screenshot or paste an external image URL.';
+  if (!state.user) return 'Sign in with Google or phone to upload screenshots to Firebase Storage.';
+  return 'Firebase Storage is not configured. Paste an external image URL instead.';
 }
 
 function switchTab(tabName) {
@@ -184,26 +182,23 @@ function switchTab(tabName) {
 }
 
 function updateUserSummary() {
-  const cloud = state.mode === 'cloud';
   const signedIn = Boolean(state.user);
-  const ready = Boolean(state.storage) && cloud;
-  refs.signInBtn.classList.toggle('hidden', !cloud || signedIn);
-  refs.phoneSignInBtn.classList.toggle('hidden', !cloud || signedIn);
-  refs.twitterSignInBtn.classList.toggle('hidden', !cloud || signedIn || !state.storage?.twitterAvailable);
-  refs.signOutBtn.classList.toggle('hidden', !cloud || !signedIn);
+  const ready = Boolean(state.storage);
+  refs.signInBtn.classList.toggle('hidden', signedIn);
+  refs.phoneSignInBtn.classList.toggle('hidden', signedIn);
+  refs.signOutBtn.classList.toggle('hidden', !signedIn);
   refs.signInBtn.disabled = !ready;
   refs.phoneSignInBtn.disabled = !ready;
-  refs.twitterSignInBtn.disabled = !ready;
   refs.signOutBtn.disabled = !ready;
-  refs.accountSignOutBtn.classList.toggle('hidden', !cloud || !signedIn);
+  refs.accountSignOutBtn.classList.toggle('hidden', !signedIn);
   refs.accountSignOutBtn.disabled = !ready;
   refs.authStatus.textContent = signedIn
     ? `Signed in${state.user.email ? ` · ${state.user.email}` : ''}`
-    : cloud ? 'Signed out · sign in to view private data' : 'Local demo · data stays in this browser';
-  refs.journalAccessNotice.textContent = signedIn || state.mode === 'demo'
+    : 'Signed out · sign in to view private data';
+  refs.journalAccessNotice.textContent = signedIn
     ? ''
     : 'Sign in with Google or phone to load your private journal. The calculator remains available while signed out.';
-  refs.winnerAccessNotice.textContent = signedIn || state.mode === 'demo'
+  refs.winnerAccessNotice.textContent = signedIn
     ? ''
     : 'Sign in with Google or phone to load your private Winner Database.';
 }
@@ -576,10 +571,6 @@ function exportCsv() {
   downloadTextFile(`trademaster-journal-${new Date().toISOString().slice(0, 10)}.csv`, rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
 }
 
-function exportJson() {
-  downloadTextFile(`trademaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), settings: state.settings, trades: state.trades, winners: state.winners }, null, 2));
-}
-
 async function handleDeleteTrade(tradeId) {
   const trade = state.trades.find((item) => item.id === tradeId);
   if (!trade || !window.confirm(`Delete trade ${trade.symbol || tradeId}?`)) return false;
@@ -726,7 +717,6 @@ function readWinnerForm() {
 }
 
 function isDefinitivePersistenceError(error) {
-  if (state.mode === 'demo') return true;
   return ['permission-denied', 'invalid-argument', 'failed-precondition', 'not-found', 'already-exists', 'storage/unauthorized', 'storage/invalid-format'].includes(String(error?.code || ''));
 }
 
@@ -777,7 +767,7 @@ async function saveWinnerForm(event) {
     }
     if (epoch !== state.sessionEpoch) return;
     // Firestore-triggered cleanup removes the old referenced object after this write.
-    closeWinnerModal(true); showToast(state.mode === 'demo' ? 'Winner example saved locally.' : 'Winner example saved to Firebase.', 'success');
+    closeWinnerModal(true); showToast('Winner example saved to Firebase.', 'success');
   } catch (error) {
     console.error(error);
     let message = friendlyError(error, 'Could not save winner example.');
@@ -846,8 +836,8 @@ function pushCalculatorToTrade() {
 }
 
 async function saveTradeForm(event) {
-  event.preventDefault(); const draft = state.ui.tradeDraft; if (!draft || draft.saving) return; draft.saving = true; refs.saveTradeBtn.disabled = true; setFormStatus(refs.tradeSaveStatus, state.mode === 'cloud' ? 'Saving to Firebase…' : 'Saving locally…', 'busy'); const epoch = state.sessionEpoch;
-  try { const trade = readTradeForm(); if (!trade.symbol) throw new Error('Symbol is required.'); if (!trade.fills.length) throw new Error('Add at least one fill.'); computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE); await state.storage.saveTrade(trade); if (epoch !== state.sessionEpoch) return; closeTradeModal(true); showToast(state.mode === 'demo' ? 'Trade saved locally.' : 'Trade saved to Firebase.', 'success'); }
+  event.preventDefault(); const draft = state.ui.tradeDraft; if (!draft || draft.saving) return; draft.saving = true; refs.saveTradeBtn.disabled = true; setFormStatus(refs.tradeSaveStatus, 'Saving to Firebase…', 'busy'); const epoch = state.sessionEpoch;
+  try { const trade = readTradeForm(); if (!trade.symbol) throw new Error('Symbol is required.'); if (!trade.fills.length) throw new Error('Add at least one fill.'); computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE); await state.storage.saveTrade(trade); if (epoch !== state.sessionEpoch) return; closeTradeModal(true); showToast('Trade saved to Firebase.', 'success'); }
   catch (error) { console.error(error); if (epoch === state.sessionEpoch) setFormStatus(refs.tradeSaveStatus, friendlyError(error, 'Could not save trade.'), 'error'); }
   finally { if (epoch === state.sessionEpoch) { draft.saving = false; refs.saveTradeBtn.disabled = false; } }
 }
@@ -869,11 +859,11 @@ function closeAccountModal() { refs.accountModal.classList.add('hidden'); refs.a
 
 async function subscribeToTrades(epoch = state.sessionEpoch, userId = state.user?.uid) {
   state.unsubTrades?.(); state.unsubTrades = null;
-  state.unsubTrades = state.storage.subscribeTrades((trades) => { if (epoch !== state.sessionEpoch || (state.mode === 'cloud' && state.user?.uid !== userId)) return; state.trades = (trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load trades.'), 'error'); });
+  state.unsubTrades = state.storage.subscribeTrades((trades) => { if (epoch !== state.sessionEpoch || state.user?.uid !== userId) return; state.trades = (trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load trades.'), 'error'); });
 }
 async function subscribeToWinners(epoch = state.sessionEpoch, userId = state.user?.uid) {
   state.unsubWinners?.(); state.unsubWinners = null;
-  state.unsubWinners = state.storage.subscribeWinners((entries) => { if (epoch !== state.sessionEpoch || (state.mode === 'cloud' && state.user?.uid !== userId)) return; state.winners = (entries || []).map((entry) => normalizeWinnerPayload(entry)); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load winner examples.'), 'error'); });
+  state.unsubWinners = state.storage.subscribeWinners((entries) => { if (epoch !== state.sessionEpoch || state.user?.uid !== userId) return; state.winners = (entries || []).map((entry) => normalizeWinnerPayload(entry)); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load winner examples.'), 'error'); });
 }
 
 function clearPrivateUi() {
@@ -883,12 +873,10 @@ function clearPrivateUi() {
 async function handleAuthChanged(user) {
   const previousUid = state.user?.uid || null; const nextUid = user?.uid || null; const keepCalculatorDraft = !previousUid && Boolean(nextUid) && Boolean(state.ui.calculatorDraftActive);
   state.sessionEpoch += 1; const epoch = state.sessionEpoch; state.user = user;
-  if (state.mode === 'cloud' && previousUid && previousUid !== nextUid) clearPrivateUi();
-  if (state.mode === 'cloud' && !user) { clearPrivateUi(); renderAll(); return; }
-  if (state.mode === 'cloud' && user) {
-    try { state.settings = (await state.storage.loadSettings()) || { ...defaultSettings }; if (epoch !== state.sessionEpoch) return; await subscribeToTrades(epoch, user.uid); await subscribeToWinners(epoch, user.uid); if (!keepCalculatorDraft && !state.ui.tradeDraft) switchTab('journal'); }
-    catch (error) { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load this account.'), 'error'); }
-  } else if (state.mode === 'demo') { await subscribeToTrades(epoch); await subscribeToWinners(epoch); }
+  if (previousUid && previousUid !== nextUid) clearPrivateUi();
+  if (!user) { clearPrivateUi(); renderAll(); return; }
+  try { state.settings = (await state.storage.loadSettings()) || { ...defaultSettings }; if (epoch !== state.sessionEpoch) return; await subscribeToTrades(epoch, user.uid); await subscribeToWinners(epoch, user.uid); if (!keepCalculatorDraft && !state.ui.tradeDraft) switchTab('journal'); }
+  catch (error) { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load this account.'), 'error'); }
   if (epoch === state.sessionEpoch) renderAll();
 }
 
@@ -896,7 +884,6 @@ function bindTabEvents() { refs.mainTabs = $('#mainTabs'); refs.mainTabs.addEven
 
 function bindToolbarEvents() {
   refs.signInBtn.addEventListener('click', async () => { try { await state.storage.signIn(); } catch (error) { console.error(error); showToast(friendlyError(error, 'Sign-in failed.'), 'error'); } });
-  refs.twitterSignInBtn.addEventListener('click', async () => { try { await state.storage.signInWithTwitter(); } catch (error) { console.error(error); showToast(friendlyError(error, 'X sign-in failed.'), 'error'); } });
   refs.phoneSignInBtn.addEventListener('click', openPhoneAuthModal); refs.closePhoneAuthBtn.addEventListener('click', closePhoneAuthModal); refs.phoneAuthModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-phone-modal')) closePhoneAuthModal(); });
   refs.restartPhoneAuthBtn.addEventListener('click', () => { state.storage?.cancelPhoneAuth?.(); refs.phoneCodeInput.value = ''; setPhoneAuthStep('number'); refs.phoneNumberInput.focus(); });
   refs.phoneAuthForm.addEventListener('submit', async (event) => { event.preventDefault(); refs.requestPhoneCodeBtn.disabled = true; setFormStatus(refs.phoneAuthStatus, 'Requesting verification code…', 'busy'); try { await state.storage.requestPhoneCode(refs.phoneNumberInput.value, 'phoneRecaptcha'); setPhoneAuthStep('code'); setFormStatus(refs.phoneAuthStatus, 'Verification code sent.'); } catch (error) { console.error(error); setFormStatus(refs.phoneAuthStatus, friendlyError(error, 'Could not send verification code.'), 'error'); } finally { refs.requestPhoneCodeBtn.disabled = false; } });
@@ -909,7 +896,7 @@ function bindToolbarEvents() {
   refs.addBuyFillBtn.addEventListener('click', () => { createFillRow({ side: 'BUY' }); state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.addSellFillBtn.addEventListener('click', () => { createFillRow({ side: 'SELL' }); state.ui.tradeDraft.dirty = true; syncTradePreview(); });
   refs.fillsContainer.addEventListener('click', (event) => { const button = event.target.closest('[data-action="remove-fill"]'); if (!button) return; button.closest('.fill-card')?.remove(); if (!refs.fillsContainer.children.length) createFillRow({ side: 'BUY' }); state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.tradeForm.addEventListener('input', () => { if (state.ui.tradeDraft) state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.tradeForm.addEventListener('change', () => { if (state.ui.tradeDraft) state.ui.tradeDraft.dirty = true; syncTradePreview(); }); refs.tradeForm.addEventListener('submit', saveTradeForm);
   refs.duplicateTradeBtn.addEventListener('click', () => { const trade = readTradeForm(); trade.id = uid('trade'); trade.fills = trade.fills.map((fill) => ({ ...fill, id: uid('fill') })); openTradeModal(trade, 'duplicate'); }); refs.deleteTradeBtn.addEventListener('click', async () => { if (await handleDeleteTrade(refs.tradeId.value)) closeTradeModal(true); }); refs.journalTable.addEventListener('click', handleJournalClick);
-  refs.importTradebookBtn.addEventListener('click', () => refs.importTradebookInput.click()); refs.importTradebookInput.addEventListener('change', handleTradebookImport); refs.exportCsvBtn.addEventListener('click', exportCsv); refs.exportJsonBtn.addEventListener('click', exportJson); refs.journalPerformanceDetails.addEventListener('toggle', renderCharts);
+  refs.importTradebookBtn.addEventListener('click', () => refs.importTradebookInput.click()); refs.importTradebookInput.addEventListener('change', handleTradebookImport); refs.exportCsvBtn.addEventListener('click', exportCsv); refs.journalPerformanceDetails.addEventListener('toggle', renderCharts);
   const bindFilter = (selector, key, render = renderAll) => { const element = $(selector); element.addEventListener('input', (event) => { state.filters[key] = event.target.value; render(); }); element.addEventListener('change', (event) => { state.filters[key] = event.target.value; render(); }); };
   for (const [selector, key] of [['#searchInput', 'search'], ['#statusFilter', 'status'], ['#directionFilter', 'direction'], ['#resultFilter', 'result'], ['#timeframeFilter', 'timeframe'], ['#strategyFilter', 'strategy'], ['#sortSelect', 'sort'], ['#lossThresholdFilter', 'lossWorseThan'], ['#moveThresholdFilter', 'minAbsMove'], ['#dipBeforeMoveFilter', 'maxDipBeforeMove']]) bindFilter(selector, key);
   $('#periodPresetFilter').addEventListener('change', (event) => { state.filters.periodPreset = event.target.value; const range = periodPresetRange(event.target.value); state.filters.fromDate = range.fromDate; state.filters.toDate = range.toDate; $('#fromDateFilter').value = range.fromDate; $('#toDateFilter').value = range.toDate; renderAll(); });
@@ -917,10 +904,7 @@ function bindToolbarEvents() {
   const bindWinnerFilter = (selector, key) => { const element = $(selector); element.addEventListener('input', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); element.addEventListener('change', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); };
   for (const [selector, key] of [['#winnerSearchInput', 'search'], ['#winnerSetupFilter', 'setup'], ['#winnerHasImageFilter', 'hasImage'], ['#winnerSortSelect', 'sort'], ['#winnerSectorFilter', 'sector'], ['#winnerTypeFilter', 'type'], ['#winnerTimeframeFilter', 'timeframe'], ['#winnerPeriodFilter', 'period'], ['#winnerMinMoveFilter', 'minMove'], ['#winnerMinInitialMoveFilter', 'minInitialMove'], ['#winnerMaxDipFilter', 'maxDipBeforeMove'], ['#winnerMaxStage4Filter', 'maxStage4Decline'], ['#winnerMinMoveCountFilter', 'minMoveCount'], ['#winnerMinBaseCountFilter', 'minBaseCount'], ['#winnerMinAvgExpansionFilter', 'minAvgExpansion'], ['#winnerMinMaxExpansionFilter', 'minMaxExpansion'], ['#winnerMinBiggestBaseFilter', 'minBiggestBaseLength'], ['#winnerMaxDeepestBaseFilter', 'maxDeepestBase']]) bindWinnerFilter(selector, key);
   for (const selector of ['#calcCapital', '#calcRiskPercent', '#calcLastEdited', '#calcEntry', '#calcSlPrice', '#calcSlPercent', '#calcPositionSize', '#calcRiskAmount', '#calcTrailPrice', '#targetR', '#targetPercent', '#targetExitPrice']) $(selector).addEventListener('input', renderCalculator); for (const [selector, mode] of [['#calcPositionSize', 'positionSize'], ['#calcRiskAmount', 'riskAmount'], ['#calcEntry', 'entry'], ['#calcSlPrice', 'entry'], ['#calcSlPercent', 'entry']]) $(selector).addEventListener('input', () => { refs.calcLastEdited.value = mode; renderCalculator(); });
-  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, state.mode === 'cloud' ? 'Saving settings to Firebase…' : 'Saving settings locally…', 'busy'); try { state.settings = await state.storage.saveSettings({ pnlMethod: refs.settingsPnlMethod.value, baseCurrency: refs.settingsCurrency.value }); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
-  refs.backupDriveBtn.addEventListener('click', async () => { try { await state.storage.backupToDrive({ version: 3, exportedAt: new Date().toISOString(), settings: state.settings, trades: state.trades, winners: state.winners }); showToast('Backup saved to Google Drive.', 'success'); } catch (error) { console.error(error); showToast(friendlyError(error, 'Backup failed.'), 'error'); } });
-  refs.restoreDriveBtn.addEventListener('click', async () => { if (!window.confirm('Restore from Drive and replace this account’s current trades and examples?')) return; try { const payload = await state.storage.restoreFromDrive(); if (!payload?.trades) throw new Error('Backup file is invalid.'); await state.storage.replaceAllData({ ...payload, winners: payload.winners || [] }); showToast('Backup restored.', 'success'); } catch (error) { console.error(error); showToast(friendlyError(error, 'Restore failed.'), 'error'); } });
-  refs.importJsonBtn.addEventListener('click', () => refs.importJsonInput.click()); refs.importJsonInput.addEventListener('change', async (event) => { const file = event.target.files?.[0]; if (!file) return; if (!window.confirm('Import this JSON and replace the current dataset?')) { event.target.value = ''; return; } try { const payload = JSON.parse(await file.text()); const data = Array.isArray(payload) ? { trades: payload, winners: [], settings: state.settings } : payload; if (!Array.isArray(data.trades)) throw new Error('JSON must contain a trades array.'); await state.storage.replaceAllData({ ...data, winners: data.winners || [] }); showToast('JSON imported.', 'success'); } catch (error) { console.error(error); showToast(friendlyError(error, 'JSON import failed.'), 'error'); } finally { event.target.value = ''; } });
+  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, 'Saving settings to Firebase…', 'busy'); try { state.settings = await state.storage.saveSettings({ pnlMethod: refs.settingsPnlMethod.value, baseCurrency: refs.settingsCurrency.value }); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
   refs.openWinnerModalBtn.addEventListener('click', () => openWinnerModal()); refs.closeWinnerModalBtn.addEventListener('click', () => closeWinnerModal()); refs.winnerModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-winner-modal')) closeWinnerModal(); }); refs.winnerTable.addEventListener('click', handleWinnerTableClick); refs.winnerTable.addEventListener('error', (event) => { const image = event.target.closest('[data-winner-image]'); if (image) { image.classList.add('hidden'); image.nextElementSibling?.classList.remove('hidden'); } }, true);
   refs.winnerForm.addEventListener('input', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('change', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('submit', saveWinnerForm); refs.winnerImageUrl.addEventListener('input', syncWinnerImagePreview); refs.pickWinnerImageBtn.addEventListener('click', () => refs.winnerImageFile.click()); refs.clearWinnerImageBtn.addEventListener('click', clearWinnerImageSelection); refs.winnerImageFile.addEventListener('change', handleWinnerImageFileChange); refs.addWinnerMoveBtn.addEventListener('click', () => { const moves = readWinnerMovesBuilderRaw(); moves.push(emptyWinnerMoveForm()); renderWinnerMovesBuilder(moves); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('click', (event) => { const button = event.target.closest('[data-move-builder-action="remove"]'); if (!button) return; renderWinnerMovesBuilder(readWinnerMovesBuilderRaw().filter((move) => move.id !== button.dataset.moveId)); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('input', renderWinnerMovesSummary); refs.deleteWinnerBtn.addEventListener('click', async () => { if (await handleDeleteWinner(refs.winnerId.value)) closeWinnerModal(true); });
   refs.closeImagePreviewBtn.addEventListener('click', closeImagePreview); refs.imagePreviewModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-image-preview')) closeImagePreview(); });
@@ -930,9 +914,8 @@ function bindKeyboardEvents() { document.addEventListener('keydown', (event) => 
 
 async function bootstrap() {
   initRefs(); bindTabEvents(); bindToolbarEvents(); bindKeyboardEvents(); clearTradeForm(); clearWinnerForm();
-  const demoOverride = new URLSearchParams(window.location.search).get('mode') === 'demo';
-  const config = demoOverride ? {} : window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); state.mode = state.storage.mode; const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
-  state.storage.onAuthChanged(handleAuthChanged); if (state.mode === 'demo') { await subscribeToTrades(); await subscribeToWinners(); } renderAll(); renderCalculator();
+  const config = window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
+  state.storage.onAuthChanged(handleAuthChanged); renderAll(); renderCalculator();
 }
 
 bootstrap().catch((error) => { console.error(error); document.body.innerHTML = `<div class="shell"><div class="panel"><div class="section-title">App failed to load</div><p class="section-copy">${escapeHtml(friendlyError(error, 'Unknown error'))}</p></div></div>`; });

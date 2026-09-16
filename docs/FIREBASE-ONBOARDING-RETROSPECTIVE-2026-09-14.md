@@ -47,7 +47,7 @@ These are grounded in the handoff or current implementation. They are not claims
 | Emulator Suite | Missing from verification; high priority | The source and test setup inspected do not connect the app to Auth, Firestore or Storage emulators. Add it to make security and failure cases repeatable. |
 | Cloud Functions | Appropriate for screenshot cleanup; PNV remains future | Firestore triggers now clean obsolete Winner screenshot objects after document deletion or reference replacement. Add the future PNV callable branch only for trusted proof validation and custom-token issuance. It does not provide an atomic Firestore-plus-Storage commit, and orphan uploads from a failed document write still need client rollback or a separate bucket reconciliation job. |
 | Realtime Database | No current requirement | Firestore already supports realtime listeners. Add another database only for a specific requirement, such as a presence design that justifies it. |
-| Analytics / Crashlytics / PNV | Remain outside this showcase scope | These were intentionally excluded. Google Drive backup is a separate Google API integration, not a Firebase service; keep it outside the core walkthrough until its identity and restore behavior is tested. |
+| Analytics / Crashlytics / PNV / Drive backup | Remain outside this showcase scope | These were intentionally excluded. Firestore is the source of truth for the cloud journal; the former Google Drive backup/restore integration has been removed from the current web surface. |
 
 The recommendations above are judgments about this app, not a checklist requiring every Firebase product. See the official [Web setup guidance](https://firebase.google.com/docs/web/setup), [Firestore listeners](https://firebase.google.com/docs/firestore/query-data/listen), [App Check overview](https://firebase.google.com/docs/app-check), and [Authentication persistence](https://firebase.google.com/docs/auth/web/auth-state-persistence).
 
@@ -100,7 +100,7 @@ Keep one dated evidence table, mark synthetic screenshots, and state the live te
 - **SDK maintenance:** the app pins CDN modules to 10.12.2. Review release notes and upgrade under tests. For ongoing development, npm and a bundler would improve dependency management and build control; a framework rewrite is unnecessary. Current Firebase documentation recommends a module bundler for production. [Web setup](https://firebase.google.com/docs/web/setup)
 - **Read volume:** listeners load each entire user collection ordered by creation time. Add a bounded recent-history view and pagination as data grows; ensure summaries still clearly describe their date range. Do not claim unlimited-scale or low-cost operation without measurements.
 - **Offline semantics:** Auth persistence, localStorage demo mode and Firestore persistent caching are separate features. Firestore persistent offline caching is not explicitly enabled here. Decide whether it is needed, especially on shared devices, before adding it. [Firestore offline data](https://firebase.google.com/docs/firestore/manage-data/enable-offline)
-- **Identity and restore:** explicit account linking requires conflict handling. The optional backup flow requests another Google popup, and restore deletes existing records before replacement; review account selection and interruption recovery before including these flows in the demo. [Account linking](https://firebase.google.com/docs/auth/web/account-linking)
+- **Identity and restore:** explicit account linking requires conflict handling. Destructive backup/restore workflows are outside the current web surface; Firestore remains the source of truth. [Account linking](https://firebase.google.com/docs/auth/web/account-linking)
 - **Observability:** collect operation-specific error codes and test logs with useful user-visible recovery states. This can begin without expanding scope to Analytics or Crashlytics.
 
 ## 6. What the Educative course added to this review
@@ -140,7 +140,7 @@ The [course](https://www.educative.io/courses/complete-guide-firebase-web) teach
 
 - [Onboarding handoff](/tmp/mytrading-handoff-2026-09-14.md)
 - [Showcase verification](/Users/naman/Documents/Coding/MyTrading/docs/SHOWCASE-VERIFICATION.md)
-- [Showcase demo](/Users/naman/Documents/Coding/MyTrading/docs/SHOWCASE-DEMO.md)
+- [Historical showcase verification](/Users/naman/Documents/Coding/MyTrading/docs/SHOWCASE-VERIFICATION.md)
 - [Firebase service implementation](/Users/naman/Documents/Coding/MyTrading/trademaster-web-v9-winner-fixes/js/firebase-service.js)
 - [Application save/lifecycle handling](/Users/naman/Documents/Coding/MyTrading/trademaster-web-v9-winner-fixes/js/app.js)
 - [Firestore rules](/Users/naman/Documents/Coding/MyTrading/trademaster-web-v9-winner-fixes/firestore.rules)

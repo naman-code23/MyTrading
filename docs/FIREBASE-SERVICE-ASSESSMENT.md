@@ -14,7 +14,7 @@ PNV is the specialized, team-relevant part of this proposal. It should not be de
 
 | Service | Decision | Why it earns a place |
 | --- | --- | --- |
-| Authentication | Keep; core | Google + optional X/Twitter + linked phone SMS demonstrates identity continuity and real onboarding; these flows are now implemented in the web client |
+| Authentication | Keep; core | Google + linked phone SMS demonstrates identity continuity and real onboarding; these flows are now implemented in the web client |
 | Firestore | Keep; core | Existing per-user journals, rules and live listeners provide a concrete sync story |
 | Storage | Keep; core | Winner DB already uses actual chart images; removing it would weaken the product workflow |
 | Hosting | Keep; core | Appropriate for this static HTML/JS website, HTTPS access and a demo/privacy URL |

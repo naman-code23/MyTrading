@@ -2,6 +2,8 @@
 
 Verification date: 2026-09-14 (Asia/Kolkata)
 
+> Historical record: this rehearsal used the former local synthetic-demo path. The v9 app is now cloud-only and no longer supports `?mode=demo`, localStorage journal persistence, or local fixture seeding. Use this file only for the pre-change UI/domain evidence; rerun the browser checks against Firebase or the Emulator Suite for current cloud behavior.
+
 Build under test: `/Users/naman/Documents/Coding/MyTrading/trademaster-web-v9-winner-fixes`, working tree implementation with `index.html` loading `js/app.js?v=20260914`. The source is tracked in GitHub. The two screenshot-cleanup Functions were deployed to Firebase project `trading-d5a0e`; Firebase Hosting was not redeployed.
 
 ## Passed
@@ -14,7 +16,7 @@ Build under test: `/Users/naman/Documents/Coding/MyTrading/trademaster-web-v9-wi
 - Rules contract test confirms owner-scoped access and server-only phone verification/replay paths.
 - Fixture manifest test confirms 12 trades across three months, 10 closed, 6 wins, 3 losses, 1 breakeven, 2 open, 4 winner examples, 2 linked winners, and 60% win rate. Both weighted-average and FIFO totals are calculated into the manifest: net P&L `₹6,235`, gross profit `₹8,258`, gross loss `₹2,023`; cumulative and monthly chart totals are checked for both methods.
 - Calculator test and browser rehearsal confirmed the primary flow: capital `₹28,00,000`, risk `0.4%`, entry `₹2,500`, stop-loss `₹2,440`, quantity `186`, calculated risk `₹11,160`; target `3R` produced an estimated exit of `₹2,680` and estimated charges of `₹282`.
-- Browser rehearsal used the installed Playwright CLI against `http://127.0.0.1:4173/?mode=demo`. Fixture seeding returned 12 trades / 4 winners and remained present after reload.
+- Browser rehearsal used the installed Playwright CLI against the former local synthetic-demo URL `http://127.0.0.1:4173/?mode=demo`. Fixture seeding returned 12 trades / 4 winners and remained present after reload.
 - Functions unit contracts confirm delete and reference-change cleanup, owner-prefix validation, idempotent missing-object handling, Functions deployment metadata, and removal of obsolete browser cleanup calls. The browser retains only rollback for a newly uploaded object whose Firestore write definitively fails.
 - Journal browser state showed the single headline summary row `₹6,235`, `10`, `6 of 10`, `2`; filtering to Closed + Winners updated both cards and charts to 6 records, `₹8,258`, and two rendered canvases. The partial-open TRENT card showed realized P&L while retaining 100 open units.
 - Winner Database browser state showed 4 responsive cards and 4 screenshots. Linked source summaries were visible. A full-size RELIANCE preview opened and Escape closed it. At 390×844, `scrollWidth` did not exceed the viewport and the card grid collapsed to one column.
@@ -31,7 +33,7 @@ The browser plugin was not available in this environment, so this used the insta
 ## Not run / live Firebase boundary
 
 - Google popup sign-in: not run; requires interactive account consent and an authorized HTTPS domain.
-- X/Twitter sign-in: not run; the provider is intentionally hidden unless `twitterEnabled: true` and provider credentials/callback are configured.
+- X/Twitter sign-in: removed from the current web surface; Google and Phone are the supported sign-in methods.
 - Phone SMS/reCAPTCHA sign-in: not run; requires Firebase Console setup or a configured fictional test number.
 - Auth session isolation across two real accounts: not run; needs two controlled identities.
 - Firestore live listeners, transaction-safe create-if-absent winner writes, cross-account denial, and deployed rule enforcement: not run. The local rules contract test is not an emulator test.
@@ -39,7 +41,7 @@ The browser plugin was not available in this environment, so this used the insta
 - Deployed Cloud Functions screenshot triggers: deployment verified, but trigger delivery and Storage deletion were not manually exercised; that requires an authenticated Firestore/Storage lifecycle rehearsal. Local tests use a fake Storage bucket and do not prove event delivery or IAM configuration.
 - Firebase CLI deployment warning: Functions were created successfully, but the command exited non-zero because no Artifact Registry cleanup policy is configured for `us-central1`. Configure the policy before long-term image accumulation becomes a concern.
 - App Check token/enforcement behavior: not run; requires a configured reCAPTCHA Enterprise site key and authorized HTTPS origin.
-- Google Drive backup/restore: not run; requires Drive API enablement and interactive OAuth scope consent.
+- Former Google Drive backup/restore path: removed from the current web surface; Firestore is the cloud source of truth.
 - Changed build on Firebase Hosting: not deployed by request. A read-only check of the known live URL returned HTTP 200, `last-modified: Sat, 12 Sep 2026`, and the deployed script still reported `js/app.js?v=20260913`; it is not evidence for this implementation.
 - Firebase Emulator Suite and real-device/carrier PNV: not run. PNV remains outside this web-only implementation boundary.
 

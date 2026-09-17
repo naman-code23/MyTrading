@@ -361,7 +361,19 @@ function renderWinnerCard(entry) {
     : `<div class="winner-image-fallback">${entry.imageUrl || entry.imageStoragePath ? 'Image reference saved · preview unavailable' : 'No screenshot'}</div>`;
   const tags = (entry.tags || []).map((tag) => `<span class="trade-tag">${escapeHtml(tag)}</span>`).join('');
   const move = entry.effectiveMove != null ? formatPercent(entry.effectiveMove, 1) : 'Move not entered';
-  return `<article class="winner-card" data-winner-id="${escapeHtml(entry.id)}"><div class="winner-card-media">${image}</div><div class="winner-card-body"><div class="winner-card-head"><div><div class="winner-stock">${escapeHtml(entry.stockName || 'Untitled example')}</div><div class="small-copy">${escapeHtml(entry.setup || 'Setup not entered')} · ${escapeHtml(entry.timeframe || 'Timeframe not entered')}</div></div><span class="pill pill-muted">${escapeHtml(move)}</span></div><div class="winner-meta">${entry.breakoutDate ? `Date ${escapeHtml(formatDate(entry.breakoutDate))}` : 'Date not entered'}${entry.period ? ` · ${escapeHtml(entry.period)}` : ''}</div>${tags ? `<div class="trade-tags">${tags}</div>` : ''}${entry.notes ? `<p class="winner-note">${escapeHtml(entry.notes)}</p>` : ''}${sourceTradeSummary(entry, true)}<div class="winner-card-actions"><button type="button" class="btn btn-ghost" data-winner-action="edit" data-winner-id="${escapeHtml(entry.id)}">Edit</button></div></div></article>`;
+  const context = [entry.sector && `Sector: ${escapeHtml(entry.sector)}`, entry.type && `Type: ${escapeHtml(entry.type)}`].filter(Boolean).join(' · ');
+  const timeline = [entry.breakoutDate && `Date: ${escapeHtml(formatDate(entry.breakoutDate))}`, entry.period && `Period: ${escapeHtml(entry.period)}`].filter(Boolean).join(' · ');
+  const pattern = entry.pattern?.moveCount ? `Pattern: ${entry.pattern.moveCount} move${entry.pattern.moveCount === 1 ? '' : 's'} · ${entry.pattern.totalBases} base${entry.pattern.totalBases === 1 ? '' : 's'}${entry.pattern.avgExpansion != null ? ` · Avg expansion ${escapeHtml(formatPercent(entry.pattern.avgExpansion, 1))}` : ''}` : '';
+  const metrics = [
+    entry.circuits != null && `Circuits: ${escapeHtml(String(entry.circuits))}`,
+    entry.initialMove != null && `Initial move: ${escapeHtml(formatPercent(entry.initialMove, 1))}`,
+    entry.baseLength != null && `Base length: ${escapeHtml(String(entry.baseLength))}`,
+    entry.move != null && `Total move: ${escapeHtml(formatPercent(entry.move, 1))}`,
+    entry.dipBeforeMove != null && `Dip: ${escapeHtml(formatPercent(entry.dipBeforeMove, 1))}`,
+    entry.stage4Decline != null && `Stage-4 decline: ${escapeHtml(formatPercent(entry.stage4Decline, 1))}`,
+  ].filter(Boolean).join(' · ');
+  const details = [context, timeline, pattern, metrics].filter(Boolean).map((line) => `<div class="winner-meta">${line}</div>`).join('');
+  return `<article class="winner-card" data-winner-id="${escapeHtml(entry.id)}"><div class="winner-card-media">${image}</div><div class="winner-card-body"><div class="winner-card-head"><div><div class="winner-stock">${escapeHtml(entry.stockName || 'Untitled example')}</div><div class="small-copy">${escapeHtml(entry.setup || 'Setup not entered')} · ${escapeHtml(entry.timeframe || 'Timeframe not entered')}</div></div><span class="pill pill-muted">${escapeHtml(move)}</span></div>${details}${tags ? `<div class="trade-tags">${tags}</div>` : ''}${entry.notes ? `<p class="winner-note">${escapeHtml(entry.notes)}</p>` : ''}${sourceTradeSummary(entry, true)}<div class="winner-card-actions"><button type="button" class="btn btn-ghost" data-winner-action="edit" data-winner-id="${escapeHtml(entry.id)}">Edit</button></div></div></article>`;
 }
 
 function renderWinnerSummary() {
@@ -522,7 +534,6 @@ function syncTradePreview() {
 
 function renderImportSummary() {
   if (!state.ui.lastImportSummary) {
-    refs.importSummary.textContent = 'Broker CSV import groups execution rows into journal trades and reports unmatched closing rows.';
     return;
   }
   const summary = state.ui.lastImportSummary;

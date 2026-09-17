@@ -60,6 +60,9 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   assert.doesNotMatch(app, /from ['"]\.\/mbi\.js['"]/i);
   assert.match(app, /createLinkedWinnerDraft/);
   assert.match(app, /FIXED_PNL_METHOD/);
+  assert.match(app, /Sector:.*entry\.sector/);
+  assert.match(app, /Type:.*entry\.type/);
+  assert.match(app, /entry\.pattern.*Pattern:/);
   assert.doesNotMatch(app, /calcHint|settingsPnlMethod|state\.settings\.pnlMethod/);
   assert.doesNotMatch(app, /mode=demo|localStorage|createDemoStorage/i);
   assert.doesNotMatch(app, /backupToDrive|restoreFromDrive|replaceAllData|importJson|exportJson/i);

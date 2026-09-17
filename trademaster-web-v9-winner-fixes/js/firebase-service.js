@@ -258,6 +258,8 @@ export async function createFirebaseService(config) {
           pnlMethod: 'AVERAGE',
           baseCurrency: 'INR',
           timezone: 'Asia/Kolkata',
+          capital: 2800000,
+          riskPercent: 0.4,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

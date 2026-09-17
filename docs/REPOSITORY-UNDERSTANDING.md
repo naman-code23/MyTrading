@@ -55,7 +55,7 @@ Existing cloud data layout:
 Firebase Auth user: uid
 Firestore:
   users/{uid}                         profile
-  users/{uid}/meta/settings           Fixed weighted-average P&L, currency, timezone
+  users/{uid}/meta/settings           Fixed weighted-average P&L, capital, risk %, currency, timezone
   users/{uid}/trades/{tradeId}         trade with embedded fills
   users/{uid}/winners/{winnerId}       pattern and image metadata
 Storage:

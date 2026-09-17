@@ -8,7 +8,7 @@ TradeMaster is a compact three-tab workspace for planning a position, recording 
 - **Journal** — multi-leg fills, pyramiding, partial exits, fixed weighted-average P&L, search/filter/sort, broker CSV import, and CSV export. The overview row contains closed net P&L, closed trades, win rate as numerator/denominator, and open positions. The two performance charts use the same filters and closed-trade accounting rules.
 - **Winner Database** — responsive screenshot-first cards, full-size preview, setup/search/screenshot/sort controls, optional pattern detail, and source links to profitable closed journal trades.
 
-The account menu contains the base-currency setting. The calculator is usable while signed out; journal and Winner Database data are private after Firebase sign-in. A calculator handoff is an unsaved journal draft and must be reviewed before saving.
+The account menu contains the calculator's user-specific trading capital, default risk percentage, and base-currency settings. The calculator is usable while signed out; journal and Winner Database data are private after Firebase sign-in. A calculator handoff is an unsaved journal draft and must be reviewed before saving.
 
 Legacy fields such as `mbiScore`/`SuperMBI` remain in normalized records and CSV exports for compatibility, but they are not rendered, filtered, or used as current product logic. Editing a record preserves unknown historical fields.
 

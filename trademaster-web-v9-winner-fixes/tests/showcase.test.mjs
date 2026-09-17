@@ -53,6 +53,8 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   assert.match(html, /<title>TradeMaster<\/title>/);
   assert.match(html, /<h1>TradeMaster<\/h1>/);
   assert.match(html, /Plan positions, journal executions, and learn from every trade\./);
+  assert.match(html, /settingsCapital/);
+  assert.match(html, /settingsRiskPercent/);
   assert.doesNotMatch(html, /TradeMaster Pro Cloud|A clear loop|Start with capital|Target returns and charges|Aggregates use closed|Timezone:|P&amp;L method|Weighted average|FIFO/i);
   assert.doesNotMatch(html, /dashboard|playbook|sell check|ai coach|supermbi/i);
   assert.doesNotMatch(html, /google drive|restore from drive|import json|export json/i);
@@ -60,6 +62,8 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   assert.doesNotMatch(app, /from ['"]\.\/mbi\.js['"]/i);
   assert.match(app, /createLinkedWinnerDraft/);
   assert.match(app, /FIXED_PNL_METHOD/);
+  assert.match(app, /applySettingsToCalculator/);
+  assert.match(app, /saveSettings\(readSettingsForm\(\)\)/);
   assert.match(app, /Sector:.*entry\.sector/);
   assert.match(app, /Type:.*entry\.type/);
   assert.match(app, /entry\.pattern.*Pattern:/);

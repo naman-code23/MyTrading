@@ -79,7 +79,7 @@ function initRefs() {
   for (const id of [
     'mainTabs', 'signInBtn', 'phoneSignInBtn', 'signOutBtn', 'authStatus', 'accountMenuBtn', 'accountSignOutBtn',
     'accountModal', 'closeAccountModalBtn', 'openAccountFromJournalBtn',
-    'settingsCurrency', 'saveSettingsBtn', 'settingsSaveStatus',
+    'settingsCapital', 'settingsRiskPercent', 'settingsCurrency', 'saveSettingsBtn', 'settingsSaveStatus',
     'phoneAuthModal', 'phoneAuthForm', 'phoneAuthTitle', 'phoneNumberStep', 'phoneCodeStep',
     'phoneNumberInput', 'phoneCodeInput', 'requestPhoneCodeBtn', 'confirmPhoneCodeBtn',
     'closePhoneAuthBtn', 'restartPhoneAuthBtn', 'phoneAuthStatus', 'journalAccessNotice',
@@ -574,7 +574,26 @@ async function handleTradebookImport(event) {
 }
 
 function renderSettingsForm() {
+  refs.settingsCapital.value = state.settings.capital ?? defaultSettings.capital;
+  refs.settingsRiskPercent.value = state.settings.riskPercent ?? defaultSettings.riskPercent;
   refs.settingsCurrency.value = state.settings.baseCurrency || 'INR';
+}
+
+function applySettingsToCalculator(force = false) {
+  if (!force && state.ui.calculatorDraftActive) return;
+  const capital = Number(state.settings.capital);
+  const riskPercent = Number(state.settings.riskPercent);
+  if (Number.isFinite(capital) && capital > 0) refs.calcCapital.value = capital;
+  if (Number.isFinite(riskPercent) && riskPercent > 0) refs.calcRiskPercent.value = riskPercent;
+  refs.calcLastEdited.value = 'entry';
+}
+
+function readSettingsForm() {
+  const capital = Number(refs.settingsCapital.value);
+  const riskPercent = Number(refs.settingsRiskPercent.value);
+  if (!Number.isFinite(capital) || capital <= 0) throw new Error('Trading capital must be greater than zero.');
+  if (!Number.isFinite(riskPercent) || riskPercent <= 0 || riskPercent > 100) throw new Error('Default risk must be between 0.01% and 100%.');
+  return { capital, riskPercent, baseCurrency: refs.settingsCurrency.value };
 }
 
 function exportCsv() {
@@ -878,7 +897,7 @@ async function subscribeToWinners(epoch = state.sessionEpoch, userId = state.use
 }
 
 function clearPrivateUi() {
-  state.unsubTrades?.(); state.unsubWinners?.(); state.unsubTrades = null; state.unsubWinners = null; state.trades = []; state.winners = []; state.settings = { ...defaultSettings }; closeTradeModal(true); closeWinnerModal(true); clearWinnerImageDraft(); state.ui.tradeDraft = null; state.ui.winnerDraft = null; state.ui.calculatorDraftActive = false;
+  state.unsubTrades?.(); state.unsubWinners?.(); state.unsubTrades = null; state.unsubWinners = null; state.trades = []; state.winners = []; state.settings = { ...defaultSettings }; applySettingsToCalculator(true); closeTradeModal(true); closeWinnerModal(true); clearWinnerImageDraft(); state.ui.tradeDraft = null; state.ui.winnerDraft = null; state.ui.calculatorDraftActive = false;
 }
 
 async function handleAuthChanged(user) {
@@ -886,7 +905,7 @@ async function handleAuthChanged(user) {
   state.sessionEpoch += 1; const epoch = state.sessionEpoch; state.user = user;
   if (previousUid && previousUid !== nextUid) clearPrivateUi();
   if (!user) { clearPrivateUi(); renderAll(); return; }
-  try { state.settings = (await state.storage.loadSettings()) || { ...defaultSettings }; if (epoch !== state.sessionEpoch) return; await subscribeToTrades(epoch, user.uid); await subscribeToWinners(epoch, user.uid); if (!keepCalculatorDraft && !state.ui.tradeDraft) switchTab('journal'); }
+  try { state.settings = (await state.storage.loadSettings()) || { ...defaultSettings }; if (epoch !== state.sessionEpoch) return; applySettingsToCalculator(!keepCalculatorDraft); await subscribeToTrades(epoch, user.uid); await subscribeToWinners(epoch, user.uid); if (!keepCalculatorDraft && !state.ui.tradeDraft) switchTab('journal'); }
   catch (error) { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load this account.'), 'error'); }
   if (epoch === state.sessionEpoch) renderAll();
 }
@@ -915,7 +934,7 @@ function bindToolbarEvents() {
   const bindWinnerFilter = (selector, key) => { const element = $(selector); element.addEventListener('input', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); element.addEventListener('change', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); };
   for (const [selector, key] of [['#winnerSearchInput', 'search'], ['#winnerSetupFilter', 'setup'], ['#winnerHasImageFilter', 'hasImage'], ['#winnerSortSelect', 'sort'], ['#winnerSectorFilter', 'sector'], ['#winnerTypeFilter', 'type'], ['#winnerTimeframeFilter', 'timeframe'], ['#winnerPeriodFilter', 'period'], ['#winnerMinMoveFilter', 'minMove'], ['#winnerMinInitialMoveFilter', 'minInitialMove'], ['#winnerMaxDipFilter', 'maxDipBeforeMove'], ['#winnerMaxStage4Filter', 'maxStage4Decline'], ['#winnerMinMoveCountFilter', 'minMoveCount'], ['#winnerMinBaseCountFilter', 'minBaseCount'], ['#winnerMinAvgExpansionFilter', 'minAvgExpansion'], ['#winnerMinMaxExpansionFilter', 'minMaxExpansion'], ['#winnerMinBiggestBaseFilter', 'minBiggestBaseLength'], ['#winnerMaxDeepestBaseFilter', 'maxDeepestBase']]) bindWinnerFilter(selector, key);
   for (const selector of ['#calcCapital', '#calcRiskPercent', '#calcLastEdited', '#calcEntry', '#calcSlPrice', '#calcSlPercent', '#calcPositionSize', '#calcRiskAmount', '#calcTrailPrice', '#targetR', '#targetPercent', '#targetExitPrice']) $(selector).addEventListener('input', renderCalculator); for (const [selector, mode] of [['#calcPositionSize', 'positionSize'], ['#calcRiskAmount', 'riskAmount'], ['#calcEntry', 'entry'], ['#calcSlPrice', 'entry'], ['#calcSlPercent', 'entry']]) $(selector).addEventListener('input', () => { refs.calcLastEdited.value = mode; renderCalculator(); });
-  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, 'Saving settings to Firebase…', 'busy'); try { state.settings = await state.storage.saveSettings({ baseCurrency: refs.settingsCurrency.value }); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
+  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, 'Saving settings to Firebase…', 'busy'); try { state.settings = await state.storage.saveSettings(readSettingsForm()); applySettingsToCalculator(true); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
   refs.openWinnerModalBtn.addEventListener('click', () => openWinnerModal()); refs.closeWinnerModalBtn.addEventListener('click', () => closeWinnerModal()); refs.winnerModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-winner-modal')) closeWinnerModal(); }); refs.winnerTable.addEventListener('click', handleWinnerTableClick); refs.winnerTable.addEventListener('error', (event) => { const image = event.target.closest('[data-winner-image]'); if (image) { image.classList.add('hidden'); image.nextElementSibling?.classList.remove('hidden'); } }, true);
   refs.winnerForm.addEventListener('input', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('change', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('submit', saveWinnerForm); refs.winnerImageUrl.addEventListener('input', syncWinnerImagePreview); refs.pickWinnerImageBtn.addEventListener('click', () => refs.winnerImageFile.click()); refs.clearWinnerImageBtn.addEventListener('click', clearWinnerImageSelection); refs.winnerImageFile.addEventListener('change', handleWinnerImageFileChange); refs.addWinnerMoveBtn.addEventListener('click', () => { const moves = readWinnerMovesBuilderRaw(); moves.push(emptyWinnerMoveForm()); renderWinnerMovesBuilder(moves); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('click', (event) => { const button = event.target.closest('[data-move-builder-action="remove"]'); if (!button) return; renderWinnerMovesBuilder(readWinnerMovesBuilderRaw().filter((move) => move.id !== button.dataset.moveId)); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('input', renderWinnerMovesSummary); refs.deleteWinnerBtn.addEventListener('click', async () => { if (await handleDeleteWinner(refs.winnerId.value)) closeWinnerModal(true); });
   refs.closeImagePreviewBtn.addEventListener('click', closeImagePreview); refs.imagePreviewModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-image-preview')) closeImagePreview(); });
@@ -925,7 +944,7 @@ function bindKeyboardEvents() { document.addEventListener('keydown', (event) => 
 
 async function bootstrap() {
   initRefs(); bindTabEvents(); bindToolbarEvents(); bindKeyboardEvents(); clearTradeForm(); clearWinnerForm();
-  const config = window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, FIXED_PNL_METHOD) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
+  const config = window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; applySettingsToCalculator(); state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, FIXED_PNL_METHOD) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
   state.storage.onAuthChanged(handleAuthChanged); renderAll(); renderCalculator();
 }
 

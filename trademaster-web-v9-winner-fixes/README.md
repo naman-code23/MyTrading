@@ -5,10 +5,10 @@ TradeMaster is a compact three-tab workspace for planning a position, recording 
 ## Product surface
 
 - **Calculator** — capital, risk %, entry, and stop-loss price are the primary inputs. Solver overrides, target simulation, trailing-stop math, and estimated charges remain available below the primary flow.
-- **Journal** — multi-leg fills, pyramiding, partial exits, FIFO or weighted-average P&L, search/filter/sort, broker CSV import, and CSV export. The overview row contains closed net P&L, closed trades, win rate as numerator/denominator, and open positions. The two performance charts use the same filters and closed-trade accounting rules.
+- **Journal** — multi-leg fills, pyramiding, partial exits, fixed weighted-average P&L, search/filter/sort, broker CSV import, and CSV export. The overview row contains closed net P&L, closed trades, win rate as numerator/denominator, and open positions. The two performance charts use the same filters and closed-trade accounting rules.
 - **Winner Database** — responsive screenshot-first cards, full-size preview, setup/search/screenshot/sort controls, optional pattern detail, and source links to profitable closed journal trades.
 
-The account menu contains P&L/currency settings. The calculator is usable while signed out; journal and Winner Database data are private after Firebase sign-in. A calculator handoff is an unsaved journal draft and must be reviewed before saving.
+The account menu contains the base-currency setting. The calculator is usable while signed out; journal and Winner Database data are private after Firebase sign-in. A calculator handoff is an unsaved journal draft and must be reviewed before saving.
 
 Legacy fields such as `mbiScore`/`SuperMBI` remain in normalized records and CSV exports for compatibility, but they are not rendered, filtered, or used as current product logic. Editing a record preserves unknown historical fields.
 
@@ -39,7 +39,7 @@ The rules are owner-scoped under `users/{uid}`. Storage winner images are stored
 
 ## Showcase fixtures
 
-The synthetic test fixtures live under [`fixtures/`](./fixtures/), with calculated expectations for both weighted-average and FIFO accounting in [`showcase-manifest.json`](./fixtures/showcase-manifest.json) and SVG chart assets in [`fixtures/assets/`](./fixtures/assets/). They are test data only, are not loaded by the app, and are not a trading result or recommendation.
+The synthetic test fixtures live under [`fixtures/`](./fixtures/), with calculated expectations for the fixed weighted-average accounting method in [`showcase-manifest.json`](./fixtures/showcase-manifest.json) and SVG chart assets in [`fixtures/assets/`](./fixtures/assets/). They are test data only, are not loaded by the app, and are not a trading result or recommendation.
 
 The service-by-service code map and configuration guide is [`docs/FIREBASE-SERVICE-GUIDE.md`](../docs/FIREBASE-SERVICE-GUIDE.md). Historical verification evidence and live-check boundaries are recorded in [`docs/SHOWCASE-VERIFICATION.md`](../docs/SHOWCASE-VERIFICATION.md).
 

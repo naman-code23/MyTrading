@@ -40,7 +40,6 @@ test('showcase fixture manifest has the requested deterministic shape', () => {
   assert.equal(showcaseManifest.winRate, 60);
   assert.equal(showcaseManifest.linkedWinnerCount, 2);
   assert.equal(showcaseManifest.screenshotCount, 4);
-  assert.deepEqual(showcaseManifest.accounting.AVERAGE, showcaseManifest.accounting.FIFO);
   assert.equal(showcaseManifest.accounting.AVERAGE.netPnl, 6235);
 });
 
@@ -51,11 +50,17 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   const firebaseService = fs.readFileSync(path.join(repoRoot, 'js/firebase-service.js'), 'utf8');
   const tabs = [...html.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(tabs, ['calculator', 'journal', 'winners']);
+  assert.match(html, /<title>TradeMaster<\/title>/);
+  assert.match(html, /<h1>TradeMaster<\/h1>/);
+  assert.match(html, /Plan positions, journal executions, and learn from every trade\./);
+  assert.doesNotMatch(html, /TradeMaster Pro Cloud|A clear loop|Start with capital|Target returns and charges|Aggregates use closed|Timezone:|P&amp;L method|Weighted average|FIFO/i);
   assert.doesNotMatch(html, /dashboard|playbook|sell check|ai coach|supermbi/i);
   assert.doesNotMatch(html, /google drive|restore from drive|import json|export json/i);
   assert.doesNotMatch(html, /twitter|sign in with x/i);
   assert.doesNotMatch(app, /from ['"]\.\/mbi\.js['"]/i);
   assert.match(app, /createLinkedWinnerDraft/);
+  assert.match(app, /FIXED_PNL_METHOD/);
+  assert.doesNotMatch(app, /calcHint|settingsPnlMethod|state\.settings\.pnlMethod/);
   assert.doesNotMatch(app, /mode=demo|localStorage|createDemoStorage/i);
   assert.doesNotMatch(app, /backupToDrive|restoreFromDrive|replaceAllData|importJson|exportJson/i);
   assert.doesNotMatch(app, /TwitterAuthProvider|signInWithTwitter|twitterAvailable|twitterEnabled/i);
@@ -141,7 +146,7 @@ test('linked winner IDs are deterministic and source snapshots are bounded', () 
   const trade = syntheticTrades[0];
   const metrics = computeTradeMetrics(trade);
   const draftA = createLinkedWinnerDraft(trade, metrics, { capturedAt: '2026-09-14T00:00:00.000Z', pnlMethod: 'AVERAGE', currency: 'INR' });
-  const draftB = createLinkedWinnerDraft(trade, metrics, { capturedAt: '2026-09-15T00:00:00.000Z', pnlMethod: 'FIFO', currency: 'USD' });
+  const draftB = createLinkedWinnerDraft(trade, metrics, { capturedAt: '2026-09-15T00:00:00.000Z', pnlMethod: 'AVERAGE', currency: 'USD' });
   assert.equal(draftA.id, linkedWinnerId(trade.id));
   assert.equal(draftA.id, draftB.id);
   assert.equal(draftA.sourceTradeId, trade.id);

@@ -2,7 +2,6 @@ import { monthKey, labelFromMonthKey, round, weekdayLabel } from './utils.js';
 
 export const PNL_METHODS = {
   AVERAGE: 'AVERAGE',
-  FIFO: 'FIFO',
 };
 
 export const TRADE_TIMEFRAMES = {
@@ -214,7 +213,7 @@ function buildOpenRiskProfile(items = [], referenceTime = Date.now()) {
   };
 }
 
-export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
+export function computeTradeMetrics(trade) {
   const fills = sortFills(trade.fills || []);
   if (!fills.length) {
     const timeframe = inferTradeTimeframe(trade, { status: 'OPEN', holdMinutes: 0, entryAt: trade.createdAt, exitAt: trade.updatedAt });
@@ -225,7 +224,7 @@ export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
       strategy: trade.strategy || '',
       timeframe,
       status: 'OPEN',
-      method,
+      method: PNL_METHODS.AVERAGE,
       feesTotal: 0,
       totalEntryQty: 0,
       totalExitQty: 0,
@@ -252,7 +251,6 @@ export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
   let realizedNetPnl = 0;
   let openQty = 0;
   let avgOpenUnit = 0;
-  const openLots = [];
   let entryAt;
   let exitAt;
 
@@ -270,11 +268,7 @@ export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
       openQty += fill.qty;
       entryAt = entryAt || fill.executedAt;
 
-      if (method === PNL_METHODS.AVERAGE) {
-        avgOpenUnit = ((avgOpenUnit * (openQty - fill.qty)) + unitBasis * fill.qty) / openQty;
-      } else {
-        openLots.push({ qty: fill.qty, unitBasis });
-      }
+      avgOpenUnit = ((avgOpenUnit * (openQty - fill.qty)) + unitBasis * fill.qty) / openQty;
       continue;
     }
 
@@ -291,23 +285,10 @@ export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
       totalExitNotional += fill.qty * fill.price;
       exitAt = fill.executedAt;
 
-      if (method === PNL_METHODS.AVERAGE) {
-        realizedNetPnl += pnlFromMatch(trade.direction, avgOpenUnit, closeUnit, fill.qty);
-      } else {
-        let remaining = fill.qty;
-        while (remaining > 0) {
-          const lot = openLots[0];
-          if (!lot) throw new Error(`Trade ${trade.id} has no open lots for FIFO.`);
-          const matched = Math.min(remaining, lot.qty);
-          realizedNetPnl += pnlFromMatch(trade.direction, lot.unitBasis, closeUnit, matched);
-          lot.qty -= matched;
-          remaining -= matched;
-          if (lot.qty === 0) openLots.shift();
-        }
-      }
+      realizedNetPnl += pnlFromMatch(trade.direction, avgOpenUnit, closeUnit, fill.qty);
 
       openQty -= fill.qty;
-      if (method === PNL_METHODS.AVERAGE && openQty === 0) avgOpenUnit = 0;
+      if (openQty === 0) avgOpenUnit = 0;
       continue;
     }
 
@@ -316,13 +297,7 @@ export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
 
   let avgOpenPrice;
   if (openQty > 0) {
-    if (method === PNL_METHODS.AVERAGE) {
-      avgOpenPrice = avgOpenUnit;
-    } else if (openLots.length > 0) {
-      const totalBasis = openLots.reduce((sum, lot) => sum + (lot.qty * lot.unitBasis), 0);
-      const totalQty = openLots.reduce((sum, lot) => sum + lot.qty, 0);
-      avgOpenPrice = totalQty ? totalBasis / totalQty : undefined;
-    }
+    avgOpenPrice = avgOpenUnit;
   }
 
   const avgEntryPrice = totalEntryQty ? totalEntryNotional / totalEntryQty : undefined;
@@ -349,7 +324,7 @@ export function computeTradeMetrics(trade, method = PNL_METHODS.AVERAGE) {
     tags: trade.tags || [],
     timeframe,
     status,
-    method,
+    method: PNL_METHODS.AVERAGE,
     entryAt,
     exitAt,
     totalEntryQty,

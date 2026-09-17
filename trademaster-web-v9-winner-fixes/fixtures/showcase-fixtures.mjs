@@ -115,7 +115,6 @@ function calculateAccountingManifest(method) {
 export function calculateShowcaseManifest() {
   const summary = summarizeJournal(syntheticTrades, 'AVERAGE');
   const average = calculateAccountingManifest('AVERAGE');
-  const fifo = calculateAccountingManifest('FIFO');
   return {
     datasetMarker: SHOWCASE_DATASET_MARKER,
     tradeCount: syntheticTrades.length,
@@ -128,7 +127,7 @@ export function calculateShowcaseManifest() {
     winRate: summary.winRate,
     linkedWinnerCount: syntheticWinners.filter((entry) => entry.sourceTradeId).length,
     screenshotCount: syntheticWinners.filter((entry) => entry.imageUrl).length,
-    accounting: { AVERAGE: average, FIFO: fifo },
+    accounting: { AVERAGE: average },
   };
 }
 

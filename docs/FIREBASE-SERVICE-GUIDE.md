@@ -160,7 +160,7 @@ Firestore is the private document database and realtime source for the journal, 
 
 ```text
 users/{uid}                         profile summary
-users/{uid}/meta/settings           P&L method, currency, timezone
+users/{uid}/meta/settings           Fixed weighted-average P&L, currency, timezone
 users/{uid}/trades/{tradeId}        execution fills and journal fields
 users/{uid}/winners/{winnerId}      winner example and image reference
 users/{uid}/security/phone          reserved backend-written phone state

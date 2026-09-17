@@ -166,7 +166,7 @@ Report PNV and SMS completion rates separately, support/fallback frequency, canc
 | Client writes protected verification state | Access denied |
 | Oversized/non-image upload | Rejected; pending UI recovers |
 | Sign-out/account switch | Old listeners and sensitive in-memory UI state cleared |
-| Synthetic journal regression | FIFO/average, pyramiding and partial exits retain expected results |
+| Synthetic journal regression | Fixed weighted-average accounting, pyramiding and partial exits retain expected results |
 
 Use Auth/Firestore/Storage/Functions emulators for application contracts and rules where supported. PNV SDK/carrier behavior and real App Check attestation need separate device testing; the Auth emulator does not reproduce them. [Auth emulator boundaries](https://firebase.google.com/docs/emulator-suite/connect_auth)
 

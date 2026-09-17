@@ -44,6 +44,7 @@ import {
 } from './utils.js';
 
 const chartManager = createChartManager();
+const FIXED_PNL_METHOD = PNL_METHODS.AVERAGE;
 const state = {
   storage: null,
   user: null,
@@ -77,8 +78,8 @@ let modalWinnerSnapshot = null;
 function initRefs() {
   for (const id of [
     'mainTabs', 'signInBtn', 'phoneSignInBtn', 'signOutBtn', 'authStatus', 'accountMenuBtn', 'accountSignOutBtn',
-    'accountModal', 'accountModalCopy', 'closeAccountModalBtn', 'openAccountFromJournalBtn',
-    'settingsPnlMethod', 'settingsCurrency', 'saveSettingsBtn', 'settingsSaveStatus',
+    'accountModal', 'closeAccountModalBtn', 'openAccountFromJournalBtn',
+    'settingsCurrency', 'saveSettingsBtn', 'settingsSaveStatus',
     'phoneAuthModal', 'phoneAuthForm', 'phoneAuthTitle', 'phoneNumberStep', 'phoneCodeStep',
     'phoneNumberInput', 'phoneCodeInput', 'requestPhoneCodeBtn', 'confirmPhoneCodeBtn',
     'closePhoneAuthBtn', 'restartPhoneAuthBtn', 'phoneAuthStatus', 'journalAccessNotice',
@@ -102,7 +103,7 @@ function initRefs() {
     'imagePreview', 'imagePreviewTitle', 'closeImagePreviewBtn', 'resetCalcBtn', 'pushCalcToTradeBtn',
     'calcCapital', 'calcRiskPercent', 'calcEntry', 'calcSlPrice', 'calcLastEdited', 'calcSlPercent',
     'calcPositionSize', 'calcRiskAmount', 'calcTrailPrice', 'calcQty', 'calcValue', 'calcActualRisk',
-    'calcPositionPercent', 'calcRiskCapitalPercent', 'calcTrailLocked', 'calcDirectionPill', 'calcHint',
+    'calcPositionPercent', 'calcRiskCapitalPercent', 'calcTrailLocked', 'calcDirectionPill',
     'targetR', 'targetPercent', 'targetExitPrice', 'targetPnl', 'targetNetPnl', 'chargesBrokerage',
     'chargesStt', 'chargesOther', 'chargesTotal', 'toast',
   ]) refs[id] = $(`#${id}`);
@@ -215,13 +216,13 @@ function periodPresetRange(preset) {
 }
 
 function getFilteredTradesRaw() {
-  return filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE)
+  return filterTrades(state.trades, state.filters, FIXED_PNL_METHOD)
     .map(({ metrics, ...trade }) => trade);
 }
 
 function getRenderableTrades() {
   return sortTrades(
-    filterTrades(state.trades, state.filters, state.settings.pnlMethod || PNL_METHODS.AVERAGE),
+    filterTrades(state.trades, state.filters, FIXED_PNL_METHOD),
     state.filters.sort,
   );
 }
@@ -289,7 +290,7 @@ function renderJournalSummary() {
     refs.journalStatsNote.textContent = '';
     return;
   }
-  const summary = summarizeJournal(getFilteredTradesRaw(), state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const summary = summarizeJournal(getFilteredTradesRaw(), FIXED_PNL_METHOD);
   const rate = summary.closedTradeCount ? formatPercent(summary.winRate, 1) : '—';
   refs.journalSummaryCards.innerHTML = [
     makeMetricPreviewCard('Closed-trade net P&L', formatCurrency(summary.netPnl, getCurrency()), summary.netPnl >= 0 ? 'positive' : 'negative'),
@@ -310,7 +311,7 @@ function renderJournalSummary() {
 }
 
 function renderTradeCard(trade) {
-  const metrics = trade.metrics || computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const metrics = trade.metrics || computeTradeMetrics(trade, FIXED_PNL_METHOD);
   const links = state.winners.filter((entry) => entry.sourceTradeId === trade.id);
   const linkAction = links.length ? 'view-winner' : 'save-winner';
   const linkLabel = links.length ? 'View winner example' : 'Save as winner example';
@@ -348,7 +349,7 @@ function sourceTradeSummary(entry, compact = false) {
   if (!entry.sourceTradeId) return '';
   const snapshot = entry.sourceTradeSnapshot || {};
   const current = state.trades.find((trade) => trade.id === entry.sourceTradeId);
-  const currentMetrics = current ? computeTradeMetrics(current, snapshot.pnlMethod || state.settings.pnlMethod || PNL_METHODS.AVERAGE) : null;
+  const currentMetrics = current ? computeTradeMetrics(current, FIXED_PNL_METHOD) : null;
   const result = snapshot.realizedNetPnl != null ? formatCurrency(snapshot.realizedNetPnl, snapshot.currency || getCurrency()) : 'Result unavailable';
   const dates = [snapshot.entryAt && `Entry ${formatDateTime(snapshot.entryAt)}`, snapshot.exitAt && `Exit ${formatDateTime(snapshot.exitAt)}`].filter(Boolean).join(' · ');
   return `<div class="source-trade-box ${compact ? 'compact' : ''}"><div class="panel-title">Saved source trade</div><div class="small-copy">${escapeHtml(snapshot.symbol || entry.stockName || entry.sourceTradeId)} · ${escapeHtml(snapshot.direction || '—')} · ${escapeHtml(dates || 'Dates unavailable')} · ${escapeHtml(result)}</div>${current ? `<button type="button" class="btn btn-ghost compact-top" data-winner-action="view-source" data-source-trade-id="${escapeHtml(entry.sourceTradeId)}">View original trade</button>` : `<div class="small-copy warning-text compact-top">Original trade unavailable · this saved snapshot remains available.</div>`}${currentMetrics && currentMetrics.status !== 'CLOSED' ? '<div class="small-copy warning-text">Current trade is no longer closed; the saved winner snapshot is historical.</div>' : ''}</div>`;
@@ -385,7 +386,7 @@ function renderCharts() {
   chartManager.clearAll();
   if (state.ui.activeTab !== 'journal' || !isPrivateDataAvailable()) return;
   const scopedTrades = getFilteredTradesRaw();
-  const method = state.settings.pnlMethod || PNL_METHODS.AVERAGE;
+  const method = FIXED_PNL_METHOD;
   const closed = scopedTrades.filter((trade) => computeTradeMetrics(trade, method).status === 'CLOSED');
   refs.journalChartsEmpty.classList.toggle('hidden', closed.length > 0);
   if (!closed.length || !refs.journalPerformanceDetails.open) return;
@@ -505,7 +506,7 @@ function syncTradePreview() {
       refs.tradeMetricsPreview.innerHTML = makeMetricPreviewCard('Status', 'Start filling the trade form');
       return;
     }
-    const metrics = computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+    const metrics = computeTradeMetrics(trade, FIXED_PNL_METHOD);
     refs.tradeMetricsPreview.innerHTML = [
       makeMetricPreviewCard('Status', metrics.status), makeMetricPreviewCard('Timeframe', metrics.timeframe),
       makeMetricPreviewCard('Average entry', metrics.avgEntryPrice ? formatCurrency(metrics.avgEntryPrice, getCurrency()) : '—'),
@@ -562,12 +563,11 @@ async function handleTradebookImport(event) {
 }
 
 function renderSettingsForm() {
-  refs.settingsPnlMethod.value = state.settings.pnlMethod || PNL_METHODS.AVERAGE;
   refs.settingsCurrency.value = state.settings.baseCurrency || 'INR';
 }
 
 function exportCsv() {
-  const rows = toCsvRows(getFilteredTradesRaw(), state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const rows = toCsvRows(getFilteredTradesRaw(), FIXED_PNL_METHOD);
   downloadTextFile(`trademaster-journal-${new Date().toISOString().slice(0, 10)}.csv`, rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
 }
 
@@ -820,7 +820,7 @@ function closeImagePreview() { refs.imagePreview.src = ''; refs.imagePreviewModa
 function renderCalculator() {
   const solver = solvePositionCalculator({ capital: refs.calcCapital.value, riskPercent: refs.calcRiskPercent.value, entry: refs.calcEntry.value, slPrice: refs.calcSlPrice.value, slPercent: refs.calcSlPercent.value, positionSize: refs.calcPositionSize.value, riskAmount: refs.calcRiskAmount.value, lastEdited: refs.calcLastEdited.value });
   $$('.risk-chip').forEach((chip) => chip.classList.toggle('active', Number(chip.dataset.risk) === Number(refs.calcRiskPercent.value || 0)));
-  refs.calcQty.textContent = String(solver.qty || 0); refs.calcValue.textContent = formatCurrency(solver.totalValue || 0, getCurrency()); refs.calcActualRisk.textContent = formatCurrency(solver.actualRisk || 0, getCurrency()); refs.calcPositionPercent.textContent = formatPercent(solver.positionPercent || 0, 1); refs.calcRiskCapitalPercent.textContent = formatPercent(solver.riskOfCapital || 0, 2); refs.calcTrailLocked.textContent = formatCurrency(lockedPnl(solver.entry, refs.calcTrailPrice.value, solver.qty, solver.long), getCurrency()); refs.calcDirectionPill.className = cn('pill', solver.entry ? solver.long ? 'pill-green' : 'pill-red' : 'pill-muted'); refs.calcDirectionPill.textContent = solver.entry ? solver.long ? 'Long setup' : 'Short setup' : 'Waiting for setup'; refs.calcHint.textContent = refs.calcLastEdited.value === 'positionSize' ? 'Solving from position size.' : refs.calcLastEdited.value === 'riskAmount' ? 'Solving from risk amount.' : 'Solving from entry + stop-loss using account risk.';
+  refs.calcQty.textContent = String(solver.qty || 0); refs.calcValue.textContent = formatCurrency(solver.totalValue || 0, getCurrency()); refs.calcActualRisk.textContent = formatCurrency(solver.actualRisk || 0, getCurrency()); refs.calcPositionPercent.textContent = formatPercent(solver.positionPercent || 0, 1); refs.calcRiskCapitalPercent.textContent = formatPercent(solver.riskOfCapital || 0, 2); refs.calcTrailLocked.textContent = formatCurrency(lockedPnl(solver.entry, refs.calcTrailPrice.value, solver.qty, solver.long), getCurrency()); refs.calcDirectionPill.className = cn('pill', solver.entry ? solver.long ? 'pill-green' : 'pill-red' : 'pill-muted'); refs.calcDirectionPill.textContent = solver.entry ? solver.long ? 'Long setup' : 'Short setup' : 'Waiting for setup';
   if (document.activeElement !== refs.calcSlPrice) refs.calcSlPrice.value = solver.slPrice || ''; if (document.activeElement !== refs.calcSlPercent) refs.calcSlPercent.value = solver.slPercent || ''; if (document.activeElement !== refs.calcPositionSize) refs.calcPositionSize.value = solver.positionSize || ''; if (document.activeElement !== refs.calcRiskAmount) refs.calcRiskAmount.value = solver.riskAmount || '';
   const target = projectTarget({ entry: solver.entry, slPrice: solver.slPrice, qty: solver.qty, targetR: refs.targetR.value, targetPercent: refs.targetPercent.value, exitPrice: refs.targetExitPrice.value });
   if (document.activeElement !== refs.targetExitPrice) refs.targetExitPrice.value = target.exitPrice || ''; if (document.activeElement !== refs.targetR) refs.targetR.value = target.targetR || ''; if (document.activeElement !== refs.targetPercent) refs.targetPercent.value = target.targetPercent || '';
@@ -837,17 +837,17 @@ function pushCalculatorToTrade() {
 
 async function saveTradeForm(event) {
   event.preventDefault(); const draft = state.ui.tradeDraft; if (!draft || draft.saving) return; draft.saving = true; refs.saveTradeBtn.disabled = true; setFormStatus(refs.tradeSaveStatus, 'Saving to Firebase…', 'busy'); const epoch = state.sessionEpoch;
-  try { const trade = readTradeForm(); if (!trade.symbol) throw new Error('Symbol is required.'); if (!trade.fills.length) throw new Error('Add at least one fill.'); computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE); await state.storage.saveTrade(trade); if (epoch !== state.sessionEpoch) return; closeTradeModal(true); showToast('Trade saved to Firebase.', 'success'); }
+  try { const trade = readTradeForm(); if (!trade.symbol) throw new Error('Symbol is required.'); if (!trade.fills.length) throw new Error('Add at least one fill.'); computeTradeMetrics(trade, FIXED_PNL_METHOD); await state.storage.saveTrade(trade); if (epoch !== state.sessionEpoch) return; closeTradeModal(true); showToast('Trade saved to Firebase.', 'success'); }
   catch (error) { console.error(error); if (epoch === state.sessionEpoch) setFormStatus(refs.tradeSaveStatus, friendlyError(error, 'Could not save trade.'), 'error'); }
   finally { if (epoch === state.sessionEpoch) { draft.saving = false; refs.saveTradeBtn.disabled = false; } }
 }
 
 function openLinkedWinnerFromTrade(trade) {
-  const metrics = computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE);
+  const metrics = computeTradeMetrics(trade, FIXED_PNL_METHOD);
   if (metrics.status !== 'CLOSED' || !(metrics.realizedNetPnl > 0)) { showToast('Only profitable closed trades can become winner examples.', 'error'); return; }
   const existing = state.winners.find((entry) => entry.sourceTradeId === trade.id);
   if (existing) { openWinnerModal(existing); return; }
-  const entry = createLinkedWinnerDraft(trade, metrics, { pnlMethod: state.settings.pnlMethod, currency: getCurrency() });
+  const entry = createLinkedWinnerDraft(trade, metrics, { pnlMethod: FIXED_PNL_METHOD, currency: getCurrency() });
   openWinnerModal(entry); state.ui.winnerDraft.dirty = true; state.ui.winnerDraft.mode = 'linked-new'; refs.winnerSourceTradeSection.innerHTML = sourceTradeSummary(entry); refs.winnerSourceTradeSection.classList.remove('hidden'); showToast('Winner example opened as a draft. Nothing has been saved yet.', 'success');
 }
 
@@ -859,7 +859,7 @@ function closeAccountModal() { refs.accountModal.classList.add('hidden'); refs.a
 
 async function subscribeToTrades(epoch = state.sessionEpoch, userId = state.user?.uid) {
   state.unsubTrades?.(); state.unsubTrades = null;
-  state.unsubTrades = state.storage.subscribeTrades((trades) => { if (epoch !== state.sessionEpoch || state.user?.uid !== userId) return; state.trades = (trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load trades.'), 'error'); });
+  state.unsubTrades = state.storage.subscribeTrades((trades) => { if (epoch !== state.sessionEpoch || state.user?.uid !== userId) return; state.trades = (trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, FIXED_PNL_METHOD) })); renderAll(); }, (error) => { if (epoch === state.sessionEpoch) showToast(friendlyError(error, 'Could not load trades.'), 'error'); });
 }
 async function subscribeToWinners(epoch = state.sessionEpoch, userId = state.user?.uid) {
   state.unsubWinners?.(); state.unsubWinners = null;
@@ -904,7 +904,7 @@ function bindToolbarEvents() {
   const bindWinnerFilter = (selector, key) => { const element = $(selector); element.addEventListener('input', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); element.addEventListener('change', (event) => { state.winnerFilters[key] = event.target.value; renderWinnerSummary(); }); };
   for (const [selector, key] of [['#winnerSearchInput', 'search'], ['#winnerSetupFilter', 'setup'], ['#winnerHasImageFilter', 'hasImage'], ['#winnerSortSelect', 'sort'], ['#winnerSectorFilter', 'sector'], ['#winnerTypeFilter', 'type'], ['#winnerTimeframeFilter', 'timeframe'], ['#winnerPeriodFilter', 'period'], ['#winnerMinMoveFilter', 'minMove'], ['#winnerMinInitialMoveFilter', 'minInitialMove'], ['#winnerMaxDipFilter', 'maxDipBeforeMove'], ['#winnerMaxStage4Filter', 'maxStage4Decline'], ['#winnerMinMoveCountFilter', 'minMoveCount'], ['#winnerMinBaseCountFilter', 'minBaseCount'], ['#winnerMinAvgExpansionFilter', 'minAvgExpansion'], ['#winnerMinMaxExpansionFilter', 'minMaxExpansion'], ['#winnerMinBiggestBaseFilter', 'minBiggestBaseLength'], ['#winnerMaxDeepestBaseFilter', 'maxDeepestBase']]) bindWinnerFilter(selector, key);
   for (const selector of ['#calcCapital', '#calcRiskPercent', '#calcLastEdited', '#calcEntry', '#calcSlPrice', '#calcSlPercent', '#calcPositionSize', '#calcRiskAmount', '#calcTrailPrice', '#targetR', '#targetPercent', '#targetExitPrice']) $(selector).addEventListener('input', renderCalculator); for (const [selector, mode] of [['#calcPositionSize', 'positionSize'], ['#calcRiskAmount', 'riskAmount'], ['#calcEntry', 'entry'], ['#calcSlPrice', 'entry'], ['#calcSlPercent', 'entry']]) $(selector).addEventListener('input', () => { refs.calcLastEdited.value = mode; renderCalculator(); });
-  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, 'Saving settings to Firebase…', 'busy'); try { state.settings = await state.storage.saveSettings({ pnlMethod: refs.settingsPnlMethod.value, baseCurrency: refs.settingsCurrency.value }); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
+  refs.saveSettingsBtn.addEventListener('click', async () => { refs.saveSettingsBtn.disabled = true; setFormStatus(refs.settingsSaveStatus, 'Saving settings to Firebase…', 'busy'); try { state.settings = await state.storage.saveSettings({ baseCurrency: refs.settingsCurrency.value }); renderAll(); renderCalculator(); setFormStatus(refs.settingsSaveStatus, 'Settings saved.', 'success'); } catch (error) { console.error(error); setFormStatus(refs.settingsSaveStatus, friendlyError(error, 'Could not save settings.'), 'error'); } finally { refs.saveSettingsBtn.disabled = false; } });
   refs.openWinnerModalBtn.addEventListener('click', () => openWinnerModal()); refs.closeWinnerModalBtn.addEventListener('click', () => closeWinnerModal()); refs.winnerModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-winner-modal')) closeWinnerModal(); }); refs.winnerTable.addEventListener('click', handleWinnerTableClick); refs.winnerTable.addEventListener('error', (event) => { const image = event.target.closest('[data-winner-image]'); if (image) { image.classList.add('hidden'); image.nextElementSibling?.classList.remove('hidden'); } }, true);
   refs.winnerForm.addEventListener('input', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('change', () => { if (state.ui.winnerDraft) state.ui.winnerDraft.dirty = true; }); refs.winnerForm.addEventListener('submit', saveWinnerForm); refs.winnerImageUrl.addEventListener('input', syncWinnerImagePreview); refs.pickWinnerImageBtn.addEventListener('click', () => refs.winnerImageFile.click()); refs.clearWinnerImageBtn.addEventListener('click', clearWinnerImageSelection); refs.winnerImageFile.addEventListener('change', handleWinnerImageFileChange); refs.addWinnerMoveBtn.addEventListener('click', () => { const moves = readWinnerMovesBuilderRaw(); moves.push(emptyWinnerMoveForm()); renderWinnerMovesBuilder(moves); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('click', (event) => { const button = event.target.closest('[data-move-builder-action="remove"]'); if (!button) return; renderWinnerMovesBuilder(readWinnerMovesBuilderRaw().filter((move) => move.id !== button.dataset.moveId)); state.ui.winnerDraft.dirty = true; }); refs.winnerMovesBuilder.addEventListener('input', renderWinnerMovesSummary); refs.deleteWinnerBtn.addEventListener('click', async () => { if (await handleDeleteWinner(refs.winnerId.value)) closeWinnerModal(true); });
   refs.closeImagePreviewBtn.addEventListener('click', closeImagePreview); refs.imagePreviewModal.addEventListener('click', (event) => { if (event.target.hasAttribute('data-close-image-preview')) closeImagePreview(); });
@@ -914,7 +914,7 @@ function bindKeyboardEvents() { document.addEventListener('keydown', (event) => 
 
 async function bootstrap() {
   initRefs(); bindTabEvents(); bindToolbarEvents(); bindKeyboardEvents(); clearTradeForm(); clearWinnerForm();
-  const config = window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, state.settings.pnlMethod || PNL_METHODS.AVERAGE) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
+  const config = window.TRADEMASTER_CONFIG?.firebase || {}; state.storage = await createStorageLayer(config); const initial = await state.storage.init(); state.user = initial.user; state.settings = initial.settings || { ...defaultSettings }; state.trades = (initial.trades || []).map((trade) => ({ ...trade, metrics: computeTradeMetrics(trade, FIXED_PNL_METHOD) })); state.winners = (initial.winners || []).map((entry) => normalizeWinnerPayload(entry));
   state.storage.onAuthChanged(handleAuthChanged); renderAll(); renderCalculator();
 }
 

@@ -31,7 +31,7 @@ Paths below are relative to `trademaster-web-v9-winner-fixes/`.
 | --- | --- | --- |
 | Calculator | Capital/risk/entry/stop sizing, target projections and estimated charges; seeds journal entries | `js/calc.js`, `js/app.js` |
 | Legacy MBI / Playbook / Sell Check | Historical compatibility module and fields; not imported by the current three-tab UI | `js/mbi.js`, legacy snapshots |
-| Journal | Multiple fills per trade, pyramiding, partial exits, FIFO or average-cost metrics, tags, notes and filters | `js/trade-engine.js`, `js/app.js` |
+| Journal | Multiple fills per trade, pyramiding, partial exits, fixed weighted-average metrics, tags, notes and filters | `js/trade-engine.js`, `js/app.js` |
 | Tradebook import | Parses broker CSV, consolidates execution fragments, groups position cycles and merges imported records | `js/tradebook-importer.js`; `handleTradebookImport` in `js/app.js` |
 | Journal performance | Closed-trade cumulative and monthly P&L charts, using the same filters as the summary/cards | `js/charts.js`, `js/trade-engine.js`, `js/app.js` |
 | Removed Dashboard / AI Coach | No current surface; old modules/snapshots are retained only as historical references | legacy snapshots |
@@ -55,7 +55,7 @@ Existing cloud data layout:
 Firebase Auth user: uid
 Firestore:
   users/{uid}                         profile
-  users/{uid}/meta/settings           P&L method, currency, timezone
+  users/{uid}/meta/settings           Fixed weighted-average P&L, currency, timezone
   users/{uid}/trades/{tradeId}         trade with embedded fills
   users/{uid}/winners/{winnerId}       pattern and image metadata
 Storage:

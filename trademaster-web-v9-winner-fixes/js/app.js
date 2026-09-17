@@ -691,7 +691,8 @@ function syncWinnerImagePreview() {
   const url = refs.winnerImageUrl.value.trim();
   const storagePath = refs.winnerImageStoragePath.value.trim();
   if (draft) {
-    refs.winnerImagePreview.innerHTML = `<div class="preview-wrap"><img class="modal-thumb" src="${escapeHtml(draft.previewUrl)}" alt="Selected screenshot preview" /><div class="preview-meta small-copy"><div class="text-strong">Selected screenshot · uploads when you save</div><div>${escapeHtml(formatBytes(draft.sizeBytes))} · ${draft.width}×${draft.height} · ${escapeHtml(draft.contentType)}</div></div></div>`;
+    const dimensions = draft.width && draft.height ? ` · ${draft.width}×${draft.height}` : '';
+    refs.winnerImagePreview.innerHTML = `<div class="preview-wrap"><img class="modal-thumb" src="${escapeHtml(draft.previewUrl)}" alt="Selected screenshot preview" /><div class="preview-meta small-copy"><div class="text-strong">Selected screenshot · uploads when you save</div><div>${escapeHtml(formatBytes(draft.sizeBytes))}${dimensions} · ${escapeHtml(draft.contentType || 'Original file type')}</div></div></div>`;
     return;
   }
   if (!url) { refs.winnerImagePreview.innerHTML = winnerImageEmptyState(); return; }

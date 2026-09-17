@@ -16,7 +16,7 @@ Keep the calculator, importer, trade engine, and Winner model in their existing 
 | Firebase Authentication | Existing; extend | Stable identity across Google, linked phone SMS and PNV custom-token sign-in |
 | Cloud Functions for Firebase | Current for screenshot cleanup; conditional for PNV | Delete obsolete Winner screenshot objects from Firestore lifecycle triggers; later validate PNV proof, link verified numbers and issue Firebase custom tokens if the Android branch proceeds |
 | Cloud Firestore | Existing; retain | Same per-UID trades, winners and settings on both clients; server-owned verification status |
-| Cloud Storage for Firebase | Existing; refine | Compressed chart screenshots associated with Winner records |
+| Cloud Storage for Firebase | Existing; refine | Original chart screenshots associated with Winner records, with a 1 MiB Storage-rule limit |
 | Firebase App Check | New | Attestation for the exchange endpoint and protected database/storage access |
 | Firebase Hosting | Configuration exists; use for demo | Serve the static web journal and any required public privacy page |
 | Google Analytics for Firebase | Deferred | Out of scope for this one-week personal learning project |
@@ -114,7 +114,7 @@ The Auth user remains the canonical phone-to-UID mapping. Avoid duplicating the 
 
 Extend Firestore rules explicitly: users may read their own phone status but cannot write it; exchange records are inaccessible to clients. Add field/type/size validation for client-owned profile, trade and Winner fields. Do not put a server-only status field into the currently unrestricted owner-writable profile document.
 
-For images, preserve the original file when it is within the 1 MiB upload limit and keep owner-scoped paths. Prefer authenticated blob reads and temporary object URLs in the web app, using the stored object path. Keep raw bearer download URLs out of presentation logs and exported demo artifacts. Use a fresh demo bucket; production migration of existing download links is separate. [Storage download controls](https://firebase.google.com/docs/storage/web/download-files)
+For images, upload the original file unchanged and enforce the 1 MiB limit in Firebase Storage rules while keeping owner-scoped paths. Prefer authenticated blob reads and temporary object URLs in the web app, using the stored object path. Keep raw bearer download URLs out of presentation logs and exported demo artifacts. Use a fresh demo bucket; production migration of existing download links is separate. [Storage download controls](https://firebase.google.com/docs/storage/web/download-files)
 
 App Check should cover Firestore, Storage and the callable endpoints. Use Android Play Integrity and web reCAPTCHA Enterprise where appropriate; use registered debug providers only in demo/development. Roll out enforcement after observing valid-client behavior. App Check complements Auth and rules; it is neither identity proof nor a universal rate limiter. Auth's own App Check integration is currently marked Preview, so do not depend on it for the core milestone. [App Check scope](https://firebase.google.com/docs/app-check)
 

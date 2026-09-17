@@ -36,7 +36,7 @@ Paths below are relative to `trademaster-web-v9-winner-fixes/`.
 | Journal performance | Closed-trade cumulative and monthly P&L charts, using the same filters as the summary/cards | `js/charts.js`, `js/trade-engine.js`, `js/app.js` |
 | Removed Dashboard / AI Coach | No current surface; old modules/snapshots are retained only as historical references | legacy snapshots |
 | Winner DB | Chart-pattern library with moves, bases, expansions, notes, tags, filters and screenshot metadata | `js/winner-db.js`, `js/app.js` |
-| Image processing | Browser validation with a 1 MiB limit and unchanged original upload; backend cleanup of obsolete Storage objects | `js/image-tools.js`, `functions/` |
+| Image processing | Original file upload with type/size enforcement in Firebase Storage rules; backend cleanup of obsolete Storage objects | `js/image-tools.js`, `functions/` |
 | Settings / export | Cloud settings; browser-generated CSV export | `js/storage.js`, `js/firebase-service.js` |
 
 The financial calculation formulas were read to understand the application; this inspection is not a validation of current trading costs or strategy performance. The showcase fixture is synthetic and must not be presented as a live result.

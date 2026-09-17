@@ -41,7 +41,7 @@ firebase deploy --only storage:rules
 ## 5) What the app does now
 
 - Upload screenshot directly from Winner DB modal
-- Validate the original screenshot in the browser before upload; no resizing or recompression is applied
+- Pass the original screenshot to Storage unchanged; the Storage rules enforce the image type and 1 MiB limit
 - Save the Storage URL into the winner record
 - Delete old screenshot when you replace or delete the winner entry
 

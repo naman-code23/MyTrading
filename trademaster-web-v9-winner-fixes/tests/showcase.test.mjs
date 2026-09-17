@@ -78,8 +78,7 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   assert.doesNotMatch(firebaseService, /TwitterAuthProvider|signInWithTwitter|twitterAvailable|twitterEnabled/i);
   assert.match(app, /prepareImageForUpload\(file\)/);
   assert.doesNotMatch(app, /maxDimension|quality: 0\.82/);
-  assert.match(imageTools, /MAX_UPLOAD_BYTES = 1 \* 1024 \* 1024/);
-  assert.doesNotMatch(imageTools, /canvasToBlob|createElement\(['"]canvas|drawImage|image\/webp/);
+  assert.doesNotMatch(imageTools, /MAX_UPLOAD_BYTES|createImageBitmap|canvasToBlob|createElement\(['"]canvas|drawImage|image\/webp/);
 });
 
 test('storage refuses to start without Firebase configuration instead of falling back locally', async () => {

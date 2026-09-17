@@ -294,14 +294,14 @@ match /users/{userId}/winner-images/{winnerId}/{allPaths=**} {
                && (
                  request.resource == null
                  || (
-                   request.resource.size < 10 * 1024 * 1024
+                   request.resource.size <= 1 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*')
                  )
                );
 }
 ```
 
-`request.resource == null` permits deletes for the owner. New or replaced objects must be images smaller than 10 MiB.
+`request.resource == null` permits deletes for the owner. New or replaced objects must be images no larger than 1 MiB.
 
 ### Caveats
 

@@ -62,7 +62,7 @@ Storage:
   users/{uid}/winner-images/{winnerId}/{file}
 ```
 
-The checked-in Firestore rules constrain the listed paths to their owner, but do not validate document schemas. Storage rules constrain the owner, image content type and size below 10 MiB. Their deployment has not been checked.
+The checked-in Firestore rules constrain the listed paths to their owner, but do not validate document schemas. Storage rules constrain the owner, image content type and size to at most 1 MiB. Their deployment has not been checked.
 
 ## Integration details that affect the proposal
 

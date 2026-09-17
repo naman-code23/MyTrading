@@ -691,7 +691,7 @@ function syncWinnerImagePreview() {
   const url = refs.winnerImageUrl.value.trim();
   const storagePath = refs.winnerImageStoragePath.value.trim();
   if (draft) {
-    refs.winnerImagePreview.innerHTML = `<div class="preview-wrap"><img class="modal-thumb" src="${escapeHtml(draft.previewUrl)}" alt="Prepared screenshot preview" /><div class="preview-meta small-copy"><div class="text-strong">Prepared screenshot · uploads when you save</div><div>${escapeHtml(formatBytes(draft.sizeBytes))} · ${draft.width}×${draft.height} · ${escapeHtml(draft.contentType)}</div></div></div>`;
+    refs.winnerImagePreview.innerHTML = `<div class="preview-wrap"><img class="modal-thumb" src="${escapeHtml(draft.previewUrl)}" alt="Selected screenshot preview" /><div class="preview-meta small-copy"><div class="text-strong">Selected screenshot · uploads when you save</div><div>${escapeHtml(formatBytes(draft.sizeBytes))} · ${draft.width}×${draft.height} · ${escapeHtml(draft.contentType)}</div></div></div>`;
     return;
   }
   if (!url) { refs.winnerImagePreview.innerHTML = winnerImageEmptyState(); return; }
@@ -706,13 +706,13 @@ async function handleWinnerImageFileChange(event) {
   if (!canUploadWinnerImages()) { event.target.value = ''; showToast('Sign in with any Firebase provider and configure Storage before uploading screenshots.', 'error'); return; }
   try {
     clearWinnerImageDraft();
-    setFormStatus(refs.winnerSaveStatus, 'Preparing screenshot…', 'busy');
-    const prepared = await prepareImageForUpload(file, { maxDimension: 1600, quality: 0.82 });
+    setFormStatus(refs.winnerSaveStatus, 'Checking screenshot…', 'busy');
+    const prepared = await prepareImageForUpload(file);
     state.ui.winnerImageDraft = { prepared };
     state.ui.winnerDraft.dirty = true;
     syncWinnerImagePreview();
     setFormStatus(refs.winnerSaveStatus, 'Screenshot ready. Save the example to upload it.', 'success');
-  } catch (error) { console.error(error); clearWinnerImageDraft(); syncWinnerImagePreview(); setFormStatus(refs.winnerSaveStatus, friendlyError(error, 'Could not prepare the screenshot.'), 'error'); }
+  } catch (error) { console.error(error); clearWinnerImageDraft(); syncWinnerImagePreview(); setFormStatus(refs.winnerSaveStatus, friendlyError(error, 'Could not load the screenshot.'), 'error'); }
 }
 
 function clearWinnerImageSelection() { clearWinnerImageDraft(); refs.winnerImageUrl.value = ''; refs.winnerImageStoragePath.value = ''; syncWinnerImagePreview(); }

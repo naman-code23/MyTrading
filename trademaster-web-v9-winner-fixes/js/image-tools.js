@@ -1,10 +1,6 @@
 import { uid } from './utils.js';
 
-function canvasToBlob(canvas, type, quality) {
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), type, quality);
-  });
-}
+const MAX_UPLOAD_BYTES = 1 * 1024 * 1024;
 
 async function loadImageSource(file) {
   if ('createImageBitmap' in window) {
@@ -39,11 +35,8 @@ export function formatBytes(bytes = 0) {
 export async function prepareImageForUpload(file, options = {}) {
   if (!file) throw new Error('Choose an image file first.');
   if (!String(file.type || '').startsWith('image/')) throw new Error('Only image files are supported.');
-
-  const maxDimension = Number(options.maxDimension || 1600);
-  const quality = Number(options.quality || 0.82);
-  const preferredType = options.preferredType || 'image/webp';
-  const fallbackType = options.fallbackType || 'image/jpeg';
+  const maxBytes = Number(options.maxBytes || MAX_UPLOAD_BYTES);
+  if (Number(file.size || 0) > maxBytes) throw new Error('Screenshot must be 1 MB or smaller.');
 
   const source = await loadImageSource(file);
   try {
@@ -51,48 +44,25 @@ export async function prepareImageForUpload(file, options = {}) {
     const sourceHeight = Number(source.height || 0);
     if (!(sourceWidth > 0 && sourceHeight > 0)) throw new Error('Could not read image dimensions.');
 
-    const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
-    const width = Math.max(1, Math.round(sourceWidth * scale));
-    const height = Math.max(1, Math.round(sourceHeight * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) throw new Error('Could not create image canvas.');
-
-    ctx.fillStyle = '#0b1220';
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(source, 0, 0, width, height);
-
-    let blob = await canvasToBlob(canvas, preferredType, quality);
-    let contentType = preferredType;
-    let extension = preferredType.includes('webp') ? 'webp' : 'jpg';
-
-    if (!blob) {
-      blob = await canvasToBlob(canvas, fallbackType, quality);
-      contentType = fallbackType;
-      extension = 'jpg';
-    }
-    if (!blob) throw new Error('Could not encode the compressed screenshot.');
-
-    const baseName = String(file.name || uid('winner-image'))
+    const originalName = String(file.name || uid('winner-image'));
+    const extension = originalName.match(/\.([^.]+)$/)?.[1]?.toLowerCase() || 'img';
+    const baseName = originalName
       .replace(/\.[^.]+$/, '')
       .replace(/[^a-zA-Z0-9-_]+/g, '-')
       .replace(/^-+|-+$/g, '') || uid('winner-image');
     const fileName = `${baseName}.${extension}`;
 
-    const previewUrl = URL.createObjectURL(blob);
+    const previewUrl = URL.createObjectURL(file);
     return {
-      blob,
+      blob: file,
       previewUrl,
       fileName,
-      contentType,
-      width,
-      height,
+      contentType: file.type,
+      width: sourceWidth,
+      height: sourceHeight,
       originalWidth: sourceWidth,
       originalHeight: sourceHeight,
-      sizeBytes: blob.size,
+      sizeBytes: file.size,
       originalSizeBytes: file.size,
     };
   } finally {

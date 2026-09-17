@@ -48,6 +48,7 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   const app = fs.readFileSync(path.join(repoRoot, 'js/app.js'), 'utf8');
   const storage = fs.readFileSync(path.join(repoRoot, 'js/storage.js'), 'utf8');
   const firebaseService = fs.readFileSync(path.join(repoRoot, 'js/firebase-service.js'), 'utf8');
+  const imageTools = fs.readFileSync(path.join(repoRoot, 'js/image-tools.js'), 'utf8');
   const tabs = [...html.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(tabs, ['calculator', 'journal', 'winners']);
   assert.match(html, /<title>TradeMaster<\/title>/);
@@ -75,6 +76,10 @@ test('the current UI contract is exactly three tabs and excludes retired surface
   assert.doesNotMatch(storage, /backupToDrive|restoreFromDrive|replaceAllData/i);
   assert.doesNotMatch(storage, /signInWithTwitter|twitterAvailable|twitterEnabled/i);
   assert.doesNotMatch(firebaseService, /TwitterAuthProvider|signInWithTwitter|twitterAvailable|twitterEnabled/i);
+  assert.match(app, /prepareImageForUpload\(file\)/);
+  assert.doesNotMatch(app, /maxDimension|quality: 0\.82/);
+  assert.match(imageTools, /MAX_UPLOAD_BYTES = 1 \* 1024 \* 1024/);
+  assert.doesNotMatch(imageTools, /canvasToBlob|createElement\(['"]canvas|drawImage|image\/webp/);
 });
 
 test('storage refuses to start without Firebase configuration instead of falling back locally', async () => {

@@ -35,7 +35,7 @@ Enable Google and Phone providers, Firestore, Storage, and Hosting in the Fireba
 
 Phone sign-in requires reCAPTCHA and an authorized hosted domain. Use fictional Firebase test numbers for rehearsals. The UI does not silently merge separate provider UIDs; account linking remains a deliberate provider action.
 
-The rules are owner-scoped under `users/{uid}`. Storage winner images are stored under `users/{uid}/winner-images/{winnerId}/...`, are resized in the browser before upload, and are cleaned up by the deployed Firestore trigger after a confirmed record delete or reference replacement. The browser only rolls back a newly uploaded object when its Firestore write definitively fails, because no trigger can observe an object that was never referenced. A failed or uncertain save preserves the typed form and prepared image for reconciliation.
+The rules are owner-scoped under `users/{uid}`. Storage winner images are stored under `users/{uid}/winner-images/{winnerId}/...`; the browser uploads the original image unchanged when it is at or below the 1 MiB limit. They are cleaned up by the deployed Firestore trigger after a confirmed record delete or reference replacement. The browser only rolls back a newly uploaded object when its Firestore write definitively fails, because no trigger can observe an object that was never referenced. A failed or uncertain save preserves the typed form and selected image for reconciliation.
 
 ## Showcase fixtures
 

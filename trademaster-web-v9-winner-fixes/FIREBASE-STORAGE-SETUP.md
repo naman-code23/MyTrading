@@ -7,7 +7,7 @@ Cloud Storage for Firebase now requires the **Blaze** plan to use Storage at all
 To keep usage effectively free for a personal app:
 - use the exact `storageBucket` value from Firebase Console
 - if this is a **new** bucket, choose a Google Cloud **Always Free** Storage region (`us-central1`, `us-east1`, or `us-west1`) when creating Storage
-- keep screenshots compressed
+- keep screenshot files at or below 1 MiB
 
 ## 2) Enable Storage
 
@@ -41,7 +41,7 @@ firebase deploy --only storage:rules
 ## 5) What the app does now
 
 - Upload screenshot directly from Winner DB modal
-- Resize and compress in browser before upload
+- Validate the original screenshot in the browser before upload; no resizing or recompression is applied
 - Save the Storage URL into the winner record
 - Delete old screenshot when you replace or delete the winner entry
 
@@ -51,6 +51,6 @@ firebase deploy --only storage:rules
 - upload operations
 - downloads / page views of those images
 
-## 7) Practical rule of thumb
+## 7) Upload limit
 
-If your compressed screenshots average around `200 KB` to `500 KB`, then `5000` images are usually around `1 GB` to `2.5 GB`, which is much easier to keep inside the common free storage allowance.
+Winner screenshots must be image files no larger than `1 MiB`. The same limit is enforced by the browser and by `storage.rules`.

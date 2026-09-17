@@ -9,7 +9,7 @@ This is a code-reading and configuration guide for the active v9 app at [`tradem
 | Firebase web bootstrap | Implemented in `js/firebase-service.js` and `js/config.js` | The known Hosting URL responds, but Firebase Auth and data flows were not end-to-end tested |
 | Authentication | Google and Phone are implemented | Provider sign-in, account isolation, SMS and reCAPTCHA were not rehearsed with real accounts |
 | Cloud Firestore | Trades, winners, settings, profiles and listeners are implemented | Rules and listener behavior were not emulator- or account-tested in the showcase pass |
-| Cloud Storage | Winner screenshots are resized, uploaded and referenced by path | Live upload/download/delete was not tested |
+| Cloud Storage | Winner screenshots at or below 1 MiB are uploaded unchanged and referenced by path | Live upload/download/delete was not tested |
 | Firebase Hosting | Static site configuration exists and serves the app | Hosting was not redeployed with the Functions change; the known URL is [`trading-d5a0e.web.app`](https://trading-d5a0e.web.app/) |
 | Cloud Functions | Delete/update triggers for obsolete Winner screenshots are implemented and deployed | Both Functions were confirmed `ACTIVE` in project `trading-d5a0e`; a real Firestore-to-Storage cleanup event was not manually exercised |
 | App Check | Optional web reCAPTCHA Enterprise initialization is implemented | No site key or enforcement behavior was verified |
@@ -246,7 +246,7 @@ Storage holds Winner screenshots as objects. Firestore stores `imageStoragePath`
 
 ### Where to read the code
 
-- [`js/image-tools.js`](../trademaster-web-v9-winner-fixes/js/image-tools.js): validates image input, resizes to the app's maximum dimension and compresses to WebP/JPEG.
+- [`js/image-tools.js`](../trademaster-web-v9-winner-fixes/js/image-tools.js): validates image input, enforces the 1 MiB limit and preserves the original file bytes.
 - [`js/firebase-service.js`](../trademaster-web-v9-winner-fixes/js/firebase-service.js): `getStorage`, `uploadBytes`, `getDownloadURL`, `deleteObject` and the canonical object path.
 - [`js/storage.js`](../trademaster-web-v9-winner-fixes/js/storage.js): exposes upload and rollback methods to the app.
 - [`js/app.js`](../trademaster-web-v9-winner-fixes/js/app.js): prepares the selected file, writes the Winner document and rolls back only a newly uploaded object when its document write definitively fails.
@@ -266,7 +266,7 @@ The user and Winner ID are part of the path so Storage rules can enforce the sam
 
 1. Enable Firebase Storage and create/use the project's default bucket.
 2. Put the exact bucket value from Firebase Console in `js/config.js`; new projects commonly use `PROJECT_ID.firebasestorage.app`, while older projects may use `PROJECT_ID.appspot.com`.
-3. Storage currently requires the Blaze plan for this project setup; keep images compressed and monitor usage.
+3. Storage currently requires the Blaze plan for this project setup; keep images at or below 1 MiB and monitor usage.
 4. Deploy [`storage.rules`](../trademaster-web-v9-winner-fixes/storage.rules).
 5. Deploy the screenshot-cleanup Functions if browser-side obsolete-image cleanup is not being used.
 
